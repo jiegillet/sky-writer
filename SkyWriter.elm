@@ -7,6 +7,7 @@ import Http exposing (getString)
 import Svg exposing (svg, circle)
 import Svg.Attributes exposing (cx, cy, r, fill, stroke, width, height, viewBox)
 import Result exposing (withDefault)
+import Json.Decode as Decode
 import Xml
 import Xml.Decode
 import Xml.Encode
@@ -27,7 +28,8 @@ main =
 
 
 type alias Model =
-    { name : String
+    { address : String
+    , location : Location
     , xml : Xml.Value
     , stars : List Star
     }
@@ -39,7 +41,7 @@ type alias Model =
 
 init : ( Model, Cmd Msg )
 init =
-    ( Model "" (Xml.Encode.null) [], Cmd.none )
+    ( Model "" (Location "" 0 0) (Xml.Encode.null) [], Cmd.none )
 
 
 
@@ -48,18 +50,25 @@ init =
 
 type Msg
     = Refresh
+    | ReadLoc String
+    | GetLoc
     | NewXml (Result Http.Error String)
+    | NewJSON (Result Http.Error Location)
 
 
 type alias Star =
     { mag : Float, ra : Float, de : Float }
 
 
+type alias Location =
+    { loc : String, lat : Float, lng : Float }
+
+
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         Refresh ->
-            ( model, getXmlData )
+            ( model, getStarData )
 
         NewXml (Ok xmlstring) ->
             ( let
@@ -77,9 +86,21 @@ update msg model =
         NewXml (Err err) ->
             ( model, Cmd.none )
 
+        ReadLoc address ->
+            ( { model | address = address }, Cmd.none )
 
-getXmlData : Cmd Msg
-getXmlData =
+        GetLoc ->
+            ( model, getLocation model.address )
+
+        NewJSON (Ok location) ->
+            ( { model | location = location }, Cmd.none )
+
+        NewJSON (Err err) ->
+            ( { model | location = Location "Location not found" 0 0 }, Cmd.none )
+
+
+getStarData : Cmd Msg
+getStarData =
     let
         forCORS =
             "https://cors-anywhere.herokuapp.com/"
@@ -91,6 +112,36 @@ getXmlData =
             getString (forCORS ++ url)
     in
         Http.send NewXml request
+
+
+getLocation : String -> Cmd Msg
+getLocation loc =
+    let
+        url =
+            "https://maps.googleapis.com/maps/api/geocode/json?key=AIzaSyB4-TN5fQZt0C4ZvX21n4a-8qsPfhYjfF4&address="
+
+        request =
+            Http.get (url ++ loc) decodeLocation
+    in
+        Http.send NewJSON request
+
+
+decodeLocation : Decode.Decoder Location
+decodeLocation =
+    let
+        res =
+            Decode.field "results" << Decode.index 0
+
+        loc =
+            res <| Decode.field "formatted_address" Decode.string
+
+        lat =
+            res <| Decode.at [ "geometry", "location", "lat" ] Decode.float
+
+        lng =
+            res <| Decode.at [ "geometry", "location", "lng" ] Decode.float
+    in
+        Decode.map3 Location loc lat lng
 
 
 xmlToStars : Xml.Value -> List Star
@@ -124,8 +175,8 @@ view model =
             ]
         ]
         [ div []
-            [ input [ placeholder "This does nothing" ] []
-            , button [ onClick Refresh ] [ text "Go" ]
+            [ input [ placeholder "Naha, Okinawa", onInput ReadLoc ] []
+            , button [ onClick GetLoc ] [ text "Get Location" ]
             ]
         , svg
             [ width "740", height "740", viewBox "0 0 740 740" ]
