@@ -1,7 +1,7 @@
 module SkyWriter exposing (..)
 
 import Html exposing (..)
-import Html.Attributes exposing (placeholder)
+import Html.Attributes exposing (placeholder, align)
 import Html.Events exposing (onClick, onInput)
 import Http exposing (getString)
 import Svg exposing (svg, circle, line, mask, rect)
@@ -41,7 +41,7 @@ type alias Model =
 
 init : ( Model, Cmd Msg )
 init =
-    ( Model "" (Location "" 0 0) (Xml.Encode.null) [], Cmd.none )
+    ( Model "" (Location "" (0 / 16) 0) (Xml.Encode.null) [], Cmd.none )
 
 
 
@@ -173,17 +173,18 @@ view model =
             [ ( "backgroundColor", "#000" )
             , ( "height", "100%" )
             ]
+        , align "center"
         ]
         [ div []
             [ input [ placeholder "Naha, Okinawa", onInput ReadLoc ] []
             , button [ onClick GetLoc ] [ text "Get Location" ]
             ]
         , svg
-            [ width "800", height "800", viewBox "0 0 800 800" ]
+            [ width "600", height "600", viewBox "0 0 600 600" ]
             (circleMask
-                :: circle [ cx "400", cy "400", r "400", stroke "white", strokeWidth "5" ] []
-                :: (drawParallels (1)
-                        ++ drawMeridians (1)
+                :: circle [ cx "300", cy "300", r "297", stroke "white", strokeWidth "5" ] []
+                :: (drawParallels model.location.lat
+                        ++ drawMeridians model.location.lat
                    )
             )
 
@@ -201,9 +202,9 @@ drawParallels lambda =
             in
                 if abs k > 1.0e-8 then
                     circle
-                        [ cx "400"
+                        [ cx "300"
                         , cy <| renorm (cos lambda / k) 2
-                        , r <| toString <| sqrt <| (400 ^ 2) * (1 - cos theta ^ 2) / k ^ 2
+                        , r <| toString <| 300 * sqrt (1 - cos theta ^ 2) / abs k
                         , stroke "white"
                         , fill "none"
                         , strokeWidth "0.5"
@@ -213,9 +214,9 @@ drawParallels lambda =
                 else if lambda == pi / 2 then
                     line
                         [ x1 "0"
-                        , x2 "800"
-                        , y1 "400"
-                        , y2 "400"
+                        , x2 "600"
+                        , y1 "300"
+                        , y2 "300"
                         , stroke "white"
                         , strokeWidth "0.5"
                         ]
@@ -235,7 +236,7 @@ drawMeridians lambda =
                 circle
                     [ cx <| renorm (-1 / (tan phi * cos lambda)) 2
                     , cy <| renorm (-1 * tan lambda) 2
-                    , r <| toString <| 400 / (abs (sin phi * cos lambda))
+                    , r <| toString <| 300 / (abs (sin phi * cos lambda))
                     , stroke "white"
                     , fill "none"
                     , strokeWidth "0.5"
@@ -245,12 +246,12 @@ drawMeridians lambda =
             else
                 line
                     [ y1 "0"
-                    , y2 "800"
-                    , x1 "400"
-                    , x2 "400"
+                    , y2 "600"
+                    , x1 "300"
+                    , x2 "300"
                     , stroke "white"
                     , strokeWidth "0.5"
-                    , transform <| "rotate(" ++ toString (phi / pi * 180) ++ " 400 400)"
+                    , transform <| "rotate(" ++ toString (phi / pi * 180) ++ " 300 300)"
                     ]
                     []
     in
@@ -260,7 +261,7 @@ drawMeridians lambda =
 
 renorm : Float -> Float -> String
 renorm x xn =
-    toString (800 * (1 / 2 + x / xn))
+    toString (600 * (1 / 2 + x / xn))
 
 
 drawStar : Star -> Svg.Svg msg
@@ -279,6 +280,6 @@ circleMask =
     Svg.defs []
         [ Svg.mask [ id "hole" ]
             [ rect [ width "100%", height "100%", fill "black" ] []
-            , circle [ r "400", cx "400", cy "400", fill "white" ] []
+            , circle [ r "300", cx "300", cy "300", fill "white" ] []
             ]
         ]
