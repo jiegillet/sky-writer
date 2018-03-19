@@ -1,11 +1,11 @@
 module SkyWriter exposing (..)
 
 import Html exposing (..)
-import Html.Attributes exposing (style, placeholder)
+import Html.Attributes exposing (placeholder)
 import Html.Events exposing (onClick, onInput)
 import Http exposing (getString)
-import Svg exposing (svg, circle)
-import Svg.Attributes exposing (cx, cy, r, fill, stroke, width, height, viewBox)
+import Svg exposing (svg, circle, line)
+import Svg.Attributes exposing (..)
 import Result exposing (withDefault)
 import Json.Decode as Decode
 import Xml
@@ -169,7 +169,7 @@ num val =
 view : Model -> Html Msg
 view model =
     div
-        [ style
+        [ Html.Attributes.style
             [ ( "backgroundColor", "#000" )
             , ( "height", "100%" )
             ]
@@ -181,25 +181,66 @@ view model =
         , svg
             [ width "740", height "740", viewBox "0 0 740 740" ]
             --            (List.map drawStar model.stars)
-            (drawMeridians (0 / 4))
+            (drawParallels (1)
+                ++ drawMeridians (1)
+            )
         ]
+
+
+drawParallels : Float -> List (Svg.Svg msg)
+drawParallels lambda =
+    let
+        mer theta =
+            let
+                k =
+                    cos theta + sin lambda
+            in
+                if abs k > 1.0e-8 then
+                    circle
+                        [ cx "370"
+                        , cy <| renorm (cos lambda / k) 2
+                        , r <| toString <| sqrt <| (370 ^ 2) * (1 - cos theta ^ 2) / k ^ 2
+                        , stroke "white"
+                        , fill "none"
+                        ]
+                        []
+                else if lambda == pi / 2 then
+                    line [ x1 "0", x2 "740", y1 "370", y2 "370", stroke "white" ] []
+                else
+                    line [ x1 "0", x2 "0", y1 "0", y2 "0" ] []
+    in
+        List.map mer <|
+            List.map (\n -> pi * (toFloat n) / 24) <|
+                List.range 1 23
 
 
 drawMeridians : Float -> List (Svg.Svg msg)
 drawMeridians lambda =
     let
-        mer theta =
-            circle
-                [ cx "370"
-                , cy <| renorm (cos lambda / (sin lambda - cos theta)) 1
-                , r <| toString <| sqrt <| 10000 * (1 - cos theta ^ 2) / (cos lambda - cos theta) ^ 2
-                , stroke "white"
-                , fill "none"
-                ]
-                []
+        par phi =
+            if abs (sin phi * cos lambda) > 1.0e-8 then
+                circle
+                    [ cx <| renorm (-1 / (tan phi * cos lambda)) 2
+                    , cy <| renorm (-1 * tan lambda) 2
+                    , r <| toString <| 370 / (abs (sin phi * cos lambda))
+                    , stroke "white"
+                    , fill "none"
+                    ]
+                    []
+            else
+                line
+                    [ y1 "0"
+                    , y2 "740"
+                    , x1 "370"
+                    , x2 "370"
+                    , stroke "white"
+                    , transform <| "rotate(" ++ toString (phi / pi * 180) ++ " 370 370)"
+                    ]
+                    []
     in
-        List.map mer
-            (List.map (\n -> pi / 2 * (0 + (toFloat n) / 12)) <| List.range 1 6)
+        List.map par <|
+            List.map (\n -> pi * (toFloat n) / 12) <|
+                List.range 0 11
 
 
 renorm : Float -> Float -> String
