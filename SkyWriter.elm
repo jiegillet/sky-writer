@@ -4,7 +4,7 @@ import Html exposing (..)
 import Html.Attributes exposing (placeholder)
 import Html.Events exposing (onClick, onInput)
 import Http exposing (getString)
-import Svg exposing (svg, circle, line)
+import Svg exposing (svg, circle, line, mask, rect)
 import Svg.Attributes exposing (..)
 import Result exposing (withDefault)
 import Json.Decode as Decode
@@ -179,11 +179,15 @@ view model =
             , button [ onClick GetLoc ] [ text "Get Location" ]
             ]
         , svg
-            [ width "740", height "740", viewBox "0 0 740 740" ]
-            --            (List.map drawStar model.stars)
-            (drawParallels (1)
-                ++ drawMeridians (1)
+            [ width "800", height "800", viewBox "0 0 800 800" ]
+            (circleMask
+                :: circle [ cx "400", cy "400", r "400", stroke "white", strokeWidth "5" ] []
+                :: (drawParallels (1)
+                        ++ drawMeridians (1)
+                   )
             )
+
+        --            (List.map drawStar model.stars)
         ]
 
 
@@ -197,21 +201,30 @@ drawParallels lambda =
             in
                 if abs k > 1.0e-8 then
                     circle
-                        [ cx "370"
+                        [ cx "400"
                         , cy <| renorm (cos lambda / k) 2
-                        , r <| toString <| sqrt <| (370 ^ 2) * (1 - cos theta ^ 2) / k ^ 2
+                        , r <| toString <| sqrt <| (400 ^ 2) * (1 - cos theta ^ 2) / k ^ 2
                         , stroke "white"
                         , fill "none"
+                        , strokeWidth "0.5"
+                        , Svg.Attributes.mask "url(#hole)"
                         ]
                         []
                 else if lambda == pi / 2 then
-                    line [ x1 "0", x2 "740", y1 "370", y2 "370", stroke "white" ] []
+                    line
+                        [ x1 "0"
+                        , x2 "800"
+                        , y1 "400"
+                        , y2 "400"
+                        , stroke "white"
+                        , strokeWidth "0.5"
+                        ]
+                        []
                 else
-                    line [ x1 "0", x2 "0", y1 "0", y2 "0" ] []
+                    svg [] []
     in
-        List.map mer <|
-            List.map (\n -> pi * (toFloat n) / 24) <|
-                List.range 1 23
+        List.map (\n -> mer <| pi * (toFloat n) / 24) <|
+            List.range 1 23
 
 
 drawMeridians : Float -> List (Svg.Svg msg)
@@ -222,30 +235,32 @@ drawMeridians lambda =
                 circle
                     [ cx <| renorm (-1 / (tan phi * cos lambda)) 2
                     , cy <| renorm (-1 * tan lambda) 2
-                    , r <| toString <| 370 / (abs (sin phi * cos lambda))
+                    , r <| toString <| 400 / (abs (sin phi * cos lambda))
                     , stroke "white"
                     , fill "none"
+                    , strokeWidth "0.5"
+                    , Svg.Attributes.mask "url(#hole)"
                     ]
                     []
             else
                 line
                     [ y1 "0"
-                    , y2 "740"
-                    , x1 "370"
-                    , x2 "370"
+                    , y2 "800"
+                    , x1 "400"
+                    , x2 "400"
                     , stroke "white"
-                    , transform <| "rotate(" ++ toString (phi / pi * 180) ++ " 370 370)"
+                    , strokeWidth "0.5"
+                    , transform <| "rotate(" ++ toString (phi / pi * 180) ++ " 400 400)"
                     ]
                     []
     in
-        List.map par <|
-            List.map (\n -> pi * (toFloat n) / 12) <|
-                List.range 0 11
+        List.map (\n -> par <| pi * (toFloat n) / 12) <|
+            List.range 0 11
 
 
 renorm : Float -> Float -> String
 renorm x xn =
-    toString (740 * (1 / 2 + x / xn))
+    toString (800 * (1 / 2 + x / xn))
 
 
 drawStar : Star -> Svg.Svg msg
@@ -257,3 +272,13 @@ drawStar { mag, ra, de } =
         , fill "white"
         ]
         []
+
+
+circleMask : Svg.Svg msg
+circleMask =
+    Svg.defs []
+        [ Svg.mask [ id "hole" ]
+            [ rect [ width "100%", height "100%", fill "black" ] []
+            , circle [ r "400", cx "400", cy "400", fill "white" ] []
+            ]
+        ]
