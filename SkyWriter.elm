@@ -8,10 +8,7 @@ import Svg exposing (svg, circle, line, mask, rect)
 import Svg.Attributes exposing (..)
 import Result exposing (withDefault)
 import Json.Decode as Decode
-import Xml
-import Xml.Decode
-import Xml.Encode
-import Xml.Query exposing (collect, tag, tags, int, float)
+import Dict
 
 
 main =
@@ -30,8 +27,8 @@ main =
 type alias Model =
     { address : String
     , location : Location
-    , xml : Xml.Value
     , stars : List Star
+    , error : String
     }
 
 
@@ -41,7 +38,7 @@ type alias Model =
 
 init : ( Model, Cmd Msg )
 init =
-    ( Model "" (Location "" (0 / 16) 0) (Xml.Encode.null) [], Cmd.none )
+    ( Model "" (Location "" 0 0) [] "", Cmd.none )
 
 
 
@@ -49,11 +46,11 @@ init =
 
 
 type Msg
-    = Refresh
-    | ReadLoc String
+    = ReadLoc String
     | GetLoc
-    | NewXml (Result Http.Error String)
-    | NewJSON (Result Http.Error Location)
+    | GetStars
+    | NewStars (Result Http.Error (List Star))
+    | NewLocation (Result Http.Error Location)
 
 
 type alias Star =
@@ -67,24 +64,14 @@ type alias Location =
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        Refresh ->
+        GetStars ->
             ( model, getStarData )
 
-        NewXml (Ok xmlstring) ->
-            ( let
-                xml =
-                    withDefault Xml.Encode.null <|
-                        Xml.Decode.decode xmlstring
-              in
-                { model
-                    | xml = xml
-                    , stars = xmlToStars xml
-                }
-            , Cmd.none
-            )
+        NewStars (Ok stars) ->
+            ( { model | stars = stars }, Cmd.none )
 
-        NewXml (Err err) ->
-            ( model, Cmd.none )
+        NewStars (Err err) ->
+            ( { model | error = toString err }, Cmd.none )
 
         ReadLoc address ->
             ( { model | address = address }, Cmd.none )
@@ -92,10 +79,10 @@ update msg model =
         GetLoc ->
             ( model, getLocation model.address )
 
-        NewJSON (Ok location) ->
+        NewLocation (Ok location) ->
             ( { model | location = location }, Cmd.none )
 
-        NewJSON (Err err) ->
+        NewLocation (Err err) ->
             ( { model | location = Location "Location not found" 0 0 }, Cmd.none )
 
 
@@ -106,12 +93,27 @@ getStarData =
             "https://cors-anywhere.herokuapp.com/"
 
         url =
-            "http://server1.sky-map.org/getstars.jsp?ra=12&de=45&angle=40&max_stars=1000&max_vmag=8"
+            "http://www.astropical.space/astrodb/api.php?table=stars&which=magnitude&limit=4.9&format=json"
 
         request =
-            getString (forCORS ++ url)
+            Http.get (forCORS ++ url) decodeStars
     in
-        Http.send NewXml request
+        Http.send NewStars request
+
+
+decodeStars : Decode.Decoder (List Star)
+decodeStars =
+    let
+        dict =
+            Decode.field "hipstars" (Decode.dict star)
+
+        star =
+            Decode.map3 Star
+                (Decode.field "mag" Decode.float)
+                (Decode.field "ra" Decode.float)
+                (Decode.field "de" Decode.float)
+    in
+        Decode.map Dict.values dict
 
 
 getLocation : String -> Cmd Msg
@@ -123,7 +125,7 @@ getLocation loc =
         request =
             Http.get (url ++ loc) decodeLocation
     in
-        Http.send NewJSON request
+        Http.send NewLocation request
 
 
 decodeLocation : Decode.Decoder Location
@@ -131,39 +133,15 @@ decodeLocation =
     let
         res =
             Decode.field "results" << Decode.index 0
-
-        loc =
-            res <| Decode.field "formatted_address" Decode.string
-
-        lat =
-            res <| Decode.at [ "geometry", "location", "lat" ] Decode.float
-
-        lng =
-            res <| Decode.at [ "geometry", "location", "lng" ] Decode.float
     in
-        Decode.map3 Location loc lat lng
+        Decode.map3 Location
+            (res <| Decode.field "formatted_address" Decode.string)
+            (res <| Decode.at [ "geometry", "location", "lat" ] Decode.float)
+            (res <| Decode.at [ "geometry", "location", "lng" ] Decode.float)
 
 
-xmlToStars : Xml.Value -> List Star
-xmlToStars xml =
-    let
-        xmls =
-            tags "star" xml
-    in
-        List.map3 (\m r d -> Star m r d)
-            (collect (tag "mag" num) xmls)
-            (collect (tag "ra" num) xmls)
-            (collect (tag "de" num) xmls)
 
-
-num : Xml.Value -> Result String Float
-num val =
-    case int val of
-        Ok i ->
-            Ok (toFloat i)
-
-        Err _ ->
-            float val
+-- VIEW
 
 
 view : Model -> Html Msg
@@ -178,6 +156,7 @@ view model =
         [ div []
             [ input [ placeholder "Naha, Okinawa", onInput ReadLoc ] []
             , button [ onClick GetLoc ] [ text "Get Location" ]
+            , button [ onClick GetStars ] [ text "Get Stars" ]
             ]
         , svg
             [ width "600", height "600", viewBox "0 0 600 600" ]
