@@ -162,9 +162,8 @@ view model =
             [ width "600", height "600", viewBox "0 0 600 600" ]
             (circleMask
                 :: circle [ cx "300", cy "300", r "297", stroke "white", strokeWidth "5" ] []
-                :: (drawParallels model.location.lat
-                        ++ drawMeridians model.location.lat
-                   )
+                :: drawParallels (degrees model.location.lat)
+                ++ drawMeridians (degrees model.location.lat)
             )
 
         --            (List.map drawStar model.stars)
@@ -182,7 +181,7 @@ drawParallels lambda =
                 if abs k > 1.0e-8 then
                     circle
                         [ cx "300"
-                        , cy <| renorm (cos lambda / k) 2
+                        , cy <| renorm ((-1) * cos lambda / k) 2
                         , r <| toString <| 300 * sqrt (1 - cos theta ^ 2) / abs k
                         , stroke "white"
                         , fill "none"
@@ -190,21 +189,19 @@ drawParallels lambda =
                         , Svg.Attributes.mask "url(#hole)"
                         ]
                         []
-                else if lambda == pi / 2 then
+                else
                     line
                         [ x1 "0"
                         , x2 "600"
-                        , y1 "300"
-                        , y2 "300"
+                        , y1 <| toString <| 300 * (1 - cos theta)
+                        , y2 <| toString <| 300 * (1 - cos theta)
                         , stroke "white"
                         , strokeWidth "0.5"
+                        , Svg.Attributes.mask "url(#hole)"
                         ]
                         []
-                else
-                    svg [] []
     in
-        List.map (\n -> mer <| pi * (toFloat n) / 24) <|
-            List.range 1 23
+        List.map (\n -> mer <| pi * (toFloat n) / 24) (List.range 1 23)
 
 
 drawMeridians : Float -> List (Svg.Svg msg)
@@ -214,7 +211,7 @@ drawMeridians lambda =
             if abs (sin phi * cos lambda) > 1.0e-8 then
                 circle
                     [ cx <| renorm (-1 / (tan phi * cos lambda)) 2
-                    , cy <| renorm (-1 * tan lambda) 2
+                    , cy <| renorm (1 * tan lambda) 2
                     , r <| toString <| 300 / (abs (sin phi * cos lambda))
                     , stroke "white"
                     , fill "none"
