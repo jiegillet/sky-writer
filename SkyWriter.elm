@@ -9,6 +9,7 @@ import Svg.Attributes exposing (..)
 import Result exposing (withDefault)
 import Json.Decode as Decode
 import Dict
+import Time.DateTime as T
 
 
 main =
@@ -28,6 +29,8 @@ type alias Model =
     { address : String
     , location : Location
     , stars : List Star
+    , lst : Float
+    , day : T.DateTime
     , error : String
     }
 
@@ -38,7 +41,7 @@ type alias Model =
 
 init : ( Model, Cmd Msg )
 init =
-    ( Model "" (Location "" 0 0) [] "", Cmd.none )
+    ( Model "" (Location "" 90 0) [] 0 j2000 "", getStarData )
 
 
 
@@ -46,9 +49,9 @@ init =
 
 
 type Msg
-    = ReadLoc String
-    | GetLoc
-    | GetStars
+    = Render
+    | ReadLoc String
+    | ReadDate String
     | NewStars (Result Http.Error (List Star))
     | NewLocation (Result Http.Error Location)
 
@@ -64,8 +67,14 @@ type alias Location =
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        GetStars ->
-            ( model, getStarData )
+        ReadLoc address ->
+            ( { model | address = address }, Cmd.none )
+
+        ReadDate date ->
+            ( { model | day = parseTime date }, Cmd.none )
+
+        Render ->
+            ( model, getLocation model.address )
 
         NewStars (Ok stars) ->
             ( { model | stars = stars }, Cmd.none )
@@ -73,17 +82,20 @@ update msg model =
         NewStars (Err err) ->
             ( { model | error = toString err }, Cmd.none )
 
-        ReadLoc address ->
-            ( { model | address = address }, Cmd.none )
-
-        GetLoc ->
-            ( model, getLocation model.address )
-
         NewLocation (Ok location) ->
-            ( { model | location = location }, Cmd.none )
+            ( { model
+                | location = location
+                , lst = localSideralTime model.day location
+              }
+            , Cmd.none
+            )
 
         NewLocation (Err err) ->
             ( { model | location = Location "Location not found" 0 0 }, Cmd.none )
+
+
+
+-- Getting Star Locations
 
 
 getStarData : Cmd Msg
@@ -93,7 +105,7 @@ getStarData =
             "https://cors-anywhere.herokuapp.com/"
 
         url =
-            "http://www.astropical.space/astrodb/api.php?table=stars&which=magnitude&limit=4.9&format=json"
+            "http://www.astropical.space/astrodb/api.php?table=stars&which=magnitude&limit=0.9&format=json"
 
         request =
             Http.get (forCORS ++ url) decodeStars
@@ -114,6 +126,10 @@ decodeStars =
                 (Decode.field "de" Decode.float)
     in
         Decode.map Dict.values dict
+
+
+
+-- Getting location coordinates
 
 
 getLocation : String -> Cmd Msg
@@ -141,6 +157,34 @@ decodeLocation =
 
 
 
+-- Getting Time
+
+
+parseTime : String -> T.DateTime
+parseTime s =
+    withDefault j2000 <| T.fromISO8601 <| s ++ "T00:00:00Z"
+
+
+j2000 : T.DateTime
+j2000 =
+    T.setHour 12 <| T.setYear 2000 <| T.dateTime T.zero
+
+
+gmst : T.DateTime -> Float
+gmst d =
+    let
+        f =
+            (toFloat (T.delta d j2000).hours) / 24
+    in
+        18.697374558 + 24.06570982441908 * f
+
+
+localSideralTime : T.DateTime -> Location -> Float
+localSideralTime d { lng } =
+    gmst d + 24 * lng / 360
+
+
+
 -- VIEW
 
 
@@ -155,100 +199,29 @@ view model =
         ]
         [ div []
             [ input [ placeholder "Naha, Okinawa", onInput ReadLoc ] []
-            , button [ onClick GetLoc ] [ text "Get Location" ]
-            , button [ onClick GetStars ] [ text "Get Stars" ]
+            , input [ type_ "date", onInput ReadDate ] []
+            , button [ onClick Render ] [ text "Ok" ]
             ]
         , svg
-            [ width "600", height "600", viewBox "0 0 600 600" ]
+            [ width "600"
+            , height "600"
+            , viewBox "0 0 600 600"
+            , stroke "white"
+            , fill "none"
+            , strokeWidth "0.5"
+            , Svg.Attributes.mask "url(#hole)"
+            ]
             (circleMask
                 :: circle [ cx "300", cy "300", r "297", stroke "white", strokeWidth "5" ] []
-                :: drawParallels (degrees model.location.lat)
-                ++ drawMeridians (degrees model.location.lat)
+                :: drawParallels model.location
+                ++ drawMeridians model.location
+                ++ (List.map (drawStar model.location model.lst) model.stars)
             )
-
-        --            (List.map drawStar model.stars)
         ]
 
 
-drawParallels : Float -> List (Svg.Svg msg)
-drawParallels lambda =
-    let
-        mer theta =
-            let
-                k =
-                    cos theta + sin lambda
-            in
-                if abs k > 1.0e-8 then
-                    circle
-                        [ cx "300"
-                        , cy <| renorm ((-1) * cos lambda / k) 2
-                        , r <| toString <| 300 * sqrt (1 - cos theta ^ 2) / abs k
-                        , stroke "white"
-                        , fill "none"
-                        , strokeWidth "0.5"
-                        , Svg.Attributes.mask "url(#hole)"
-                        ]
-                        []
-                else
-                    line
-                        [ x1 "0"
-                        , x2 "600"
-                        , y1 <| toString <| 300 * (1 - cos theta)
-                        , y2 <| toString <| 300 * (1 - cos theta)
-                        , stroke "white"
-                        , strokeWidth "0.5"
-                        , Svg.Attributes.mask "url(#hole)"
-                        ]
-                        []
-    in
-        List.map (\n -> mer <| pi * (toFloat n) / 24) (List.range 1 23)
 
-
-drawMeridians : Float -> List (Svg.Svg msg)
-drawMeridians lambda =
-    let
-        par phi =
-            if abs (sin phi * cos lambda) > 1.0e-8 then
-                circle
-                    [ cx <| renorm (-1 / (tan phi * cos lambda)) 2
-                    , cy <| renorm (1 * tan lambda) 2
-                    , r <| toString <| 300 / (abs (sin phi * cos lambda))
-                    , stroke "white"
-                    , fill "none"
-                    , strokeWidth "0.5"
-                    , Svg.Attributes.mask "url(#hole)"
-                    ]
-                    []
-            else
-                line
-                    [ y1 "0"
-                    , y2 "600"
-                    , x1 "300"
-                    , x2 "300"
-                    , stroke "white"
-                    , strokeWidth "0.5"
-                    , transform <| "rotate(" ++ toString (phi / pi * 180) ++ " 300 300)"
-                    ]
-                    []
-    in
-        List.map (\n -> par <| pi * (toFloat n) / 12) <|
-            List.range 0 11
-
-
-renorm : Float -> Float -> String
-renorm x xn =
-    toString (600 * (1 / 2 + x / xn))
-
-
-drawStar : Star -> Svg.Svg msg
-drawStar { mag, ra, de } =
-    circle
-        [ cx (renorm (ra - 12) 5)
-        , cy (renorm (de - 45) 40)
-        , r (toString (8 - mag))
-        , fill "white"
-        ]
-        []
+-- Drawing the star map
 
 
 circleMask : Svg.Svg msg
@@ -259,3 +232,94 @@ circleMask =
             , circle [ r "300", cx "300", cy "300", fill "white" ] []
             ]
         ]
+
+
+drawParallels : Location -> List (Svg.Svg msg)
+drawParallels { lat } =
+    let
+        l =
+            degrees lat
+
+        mer theta =
+            let
+                k =
+                    cos theta + sin l
+            in
+                if abs k > 1.0e-8 then
+                    circle
+                        [ cx "300"
+                        , cy <| renorm ((-1) * cos l / k) 2
+                        , r <| toString <| 300 * sqrt (1 - cos theta ^ 2) / abs k
+                        ]
+                        []
+                else if theta <= pi / 2 then
+                    line
+                        [ x1 "0"
+                        , x2 "600"
+                        , y1 <| toString <| 300 * (1 - cos theta)
+                        , y2 <| toString <| 300 * (1 - cos theta)
+                        ]
+                        []
+                else
+                    svg [] []
+    in
+        List.map (\n -> mer <| pi * (toFloat n) / 12) (List.range 1 11)
+
+
+drawMeridians : Location -> List (Svg.Svg msg)
+drawMeridians { lat } =
+    let
+        l =
+            degrees lat
+
+        par phi =
+            if abs (sin phi * cos l) > 1.0e-8 then
+                circle
+                    [ cx <| renorm (-1 / (tan phi * cos l)) 2
+                    , cy <| renorm (1 * tan l) 2
+                    , r <| toString <| 300 / (abs (sin phi * cos l))
+                    ]
+                    []
+            else
+                line
+                    [ y1 "0"
+                    , y2 "600"
+                    , x1 "300"
+                    , x2 "300"
+                    , transform <| "rotate(" ++ toString (phi / pi * 180) ++ " 300 300)"
+                    ]
+                    []
+    in
+        List.map (\n -> par <| pi * (toFloat n) / 12) (List.range 0 11)
+
+
+renorm : Float -> Float -> String
+renorm x xn =
+    toString (600 * (1 / 2 + x / xn))
+
+
+drawStar : Location -> Float -> Star -> Svg.Svg msg
+drawStar { lat, lng } lst { mag, ra, de } =
+    let
+        d =
+            degrees de
+
+        a =
+            turns ((ra + lst) / 24)
+
+        l =
+            degrees (lat - 90)
+
+        y =
+            cos d * sin a
+
+        den =
+            1 - sin l * y + cos l * sin d
+    in
+        circle
+            [ cx <| toString <| 300 * (1 + (cos d * cos a) / den)
+            , cy <| toString <| 300 * (1 + (cos l * y + sin l * sin d) / den)
+            , r (toString (6 - mag))
+            , fill "white"
+            ]
+            []
