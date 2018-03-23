@@ -29,7 +29,6 @@ type alias Model =
     { address : String
     , location : Location
     , stars : List Star
-    , lst : Float
     , day : T.DateTime
     , error : String
     }
@@ -41,7 +40,18 @@ type alias Model =
 
 init : ( Model, Cmd Msg )
 init =
-    ( Model "" (Location "" 90 0) [] 0 j2000 "", getStarData )
+    ( Model ""
+        defaultLoc
+        []
+        j2000
+        ""
+    , getStarData
+    )
+
+
+defaultLoc : Location
+defaultLoc =
+    Location "North Pole" 90 0
 
 
 
@@ -83,15 +93,10 @@ update msg model =
             ( { model | error = toString err }, Cmd.none )
 
         NewLocation (Ok location) ->
-            ( { model
-                | location = location
-                , lst = localSideralTime model.day location
-              }
-            , Cmd.none
-            )
+            ( { model | location = location }, Cmd.none )
 
         NewLocation (Err err) ->
-            ( { model | location = Location "Location not found" 0 0 }, Cmd.none )
+            ( { model | location = defaultLoc }, Cmd.none )
 
 
 
@@ -215,7 +220,7 @@ view model =
                 :: circle [ cx "300", cy "300", r "297", stroke "white", strokeWidth "5" ] []
                 :: drawParallels model.location
                 ++ drawMeridians model.location
-                ++ (List.map (drawStar model.location model.lst) model.stars)
+                ++ (List.map (drawStar model.location model.day) model.stars)
             )
         ]
 
@@ -298,17 +303,17 @@ renorm x xn =
     toString (600 * (1 / 2 + x / xn))
 
 
-drawStar : Location -> Float -> Star -> Svg.Svg msg
-drawStar { lat, lng } lst { mag, ra, de } =
+drawStar : Location -> T.DateTime -> Star -> Svg.Svg msg
+drawStar ({ lat, lng } as loc) day { mag, ra, de } =
     let
         d =
             degrees de
 
-        a =
-            turns ((ra + lst) / 24)
-
         l =
             degrees (lat - 90)
+
+        a =
+            turns ((ra - localSideralTime day loc) / 24) + pi / 2
 
         y =
             cos d * sin a
