@@ -3,13 +3,15 @@ module SkyWriter exposing (..)
 import Html exposing (..)
 import Html.Attributes exposing (placeholder, align)
 import Html.Events exposing (onClick, onInput)
-import Http exposing (getString)
 import Svg exposing (svg, circle, line, mask, rect)
 import Svg.Attributes exposing (..)
-import Result exposing (withDefault)
+import Http
 import Json.Decode as Decode
+import Result
+import Time.DateTime as T exposing (DateTime)
 import Dict
-import Time.DateTime as T
+import Anim exposing (..)
+import Letters exposing (alphabet)
 
 
 main =
@@ -17,7 +19,7 @@ main =
         { init = init
         , view = view
         , update = update
-        , subscriptions = \_ -> Sub.none
+        , subscriptions = subscriptions
         }
 
 
@@ -28,10 +30,26 @@ main =
 type alias Model =
     { address : String
     , location : Location
+    , name : String
     , stars : List Star
-    , day : T.DateTime
+    , stars2D : List Position
+    , day : DateTime
+    , circles : Anim.Circles
+    , segments : Anim.Segments
     , error : String
     }
+
+
+type alias Star =
+    { mag : Float, ra : Float, de : Float }
+
+
+type alias Location =
+    { loc : String, lat : Float, lng : Float }
+
+
+type alias Position =
+    ( Float, Float, Float )
 
 
 
@@ -42,8 +60,12 @@ init : ( Model, Cmd Msg )
 init =
     ( Model ""
         defaultLoc
+        "SHINJI"
+        []
         []
         j2000
+        Anim.emptyCircles
+        Anim.emptySegments
         ""
     , getStarData
     )
@@ -55,23 +77,29 @@ defaultLoc =
 
 
 
+-- SUBSCRIPTIONS
+
+
+subscriptions : Model -> Sub Msg
+subscriptions { circles, segments } =
+    Sub.batch
+        [ Anim.subscriptionsCircles Animate circles
+        , Anim.subscriptionsSegments Animate segments
+        ]
+
+
+
 -- UPDATE
 
 
 type Msg
     = Render
     | ReadLoc String
+    | ReadName String
     | ReadDate String
     | NewStars (Result Http.Error (List Star))
     | NewLocation (Result Http.Error Location)
-
-
-type alias Star =
-    { mag : Float, ra : Float, de : Float }
-
-
-type alias Location =
-    { loc : String, lat : Float, lng : Float }
+    | Animate Anim.Msg
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -79,6 +107,9 @@ update msg model =
     case msg of
         ReadLoc address ->
             ( { model | address = address }, Cmd.none )
+
+        ReadName name ->
+            ( { model | name = format name }, Cmd.none )
 
         ReadDate date ->
             ( { model | day = parseTime date }, Cmd.none )
@@ -92,11 +123,49 @@ update msg model =
         NewStars (Err err) ->
             ( { model | error = toString err }, Cmd.none )
 
-        NewLocation (Ok location) ->
-            ( { model | location = location }, Cmd.none )
+        NewLocation result ->
+            let
+                location =
+                    Result.withDefault defaultLoc result
 
-        NewLocation (Err err) ->
-            ( { model | location = defaultLoc }, Cmd.none )
+                stars2D =
+                    List.map (getPosition location model.day) model.stars
+
+                ( circles, segments ) =
+                    initAnim stars2D model.name
+            in
+                ( { model
+                    | location = location
+                    , stars2D = stars2D
+                    , circles = circles
+                    , segments = segments
+                  }
+                , Cmd.none
+                )
+
+        Animate animMsg ->
+            ( { model
+                | circles = Anim.updateCircles animMsg model.circles
+                , segments = Anim.updateSegments animMsg model.segments
+              }
+            , Cmd.none
+            )
+
+
+
+-- format name to A-Z and space only
+
+
+format : String -> String
+format =
+    let
+        select c =
+            if c < 'A' || 'Z' < c then
+                ' '
+            else
+                c
+    in
+        String.trim << String.map select << String.toUpper
 
 
 
@@ -110,7 +179,7 @@ getStarData =
             "https://cors-anywhere.herokuapp.com/"
 
         url =
-            "http://www.astropical.space/astrodb/api.php?table=stars&which=magnitude&limit=0.9&format=json"
+            "http://www.astropical.space/astrodb/api.php?table=stars&which=magnitude&limit=4.9&format=json"
 
         request =
             Http.get (forCORS ++ url) decodeStars
@@ -165,17 +234,17 @@ decodeLocation =
 -- Getting Time
 
 
-parseTime : String -> T.DateTime
+parseTime : String -> DateTime
 parseTime s =
-    withDefault j2000 <| T.fromISO8601 <| s ++ "T00:00:00Z"
+    Result.withDefault j2000 <| T.fromISO8601 <| s ++ "T00:00:00Z"
 
 
-j2000 : T.DateTime
+j2000 : DateTime
 j2000 =
     T.setHour 12 <| T.setYear 2000 <| T.dateTime T.zero
 
 
-gmst : T.DateTime -> Float
+gmst : DateTime -> Float
 gmst d =
     let
         f =
@@ -184,9 +253,34 @@ gmst d =
         18.697374558 + 24.06570982441908 * f
 
 
-localSideralTime : T.DateTime -> Location -> Float
+localSideralTime : DateTime -> Location -> Float
 localSideralTime d { lng } =
     gmst d + 24 * lng / 360
+
+
+
+-- calculate position on stereographic projection
+
+
+getPosition : Location -> DateTime -> Star -> Position
+getPosition ({ lat, lng } as loc) day { mag, ra, de } =
+    let
+        d =
+            degrees de
+
+        l =
+            degrees (lat - 90)
+
+        a =
+            turns ((ra - localSideralTime day loc) / 24) + pi / 2
+
+        y =
+            cos d * sin a
+
+        den =
+            1 - sin l * y + cos l * sin d
+    in
+        ( (cos d * cos a) / den, (cos l * y + sin l * sin d) / den, mag )
 
 
 
@@ -203,8 +297,9 @@ view model =
         , align "center"
         ]
         [ div []
-            [ input [ placeholder "Naha, Okinawa", onInput ReadLoc ] []
-            , input [ type_ "date", onInput ReadDate ] []
+            [ input [ placeholder "Nishihara, Okinawa", onInput ReadLoc ] []
+            , input [ placeholder "Shinji", onInput ReadName ] []
+            , input [ type_ "date", Html.Attributes.value "2017-06-14", onInput ReadDate ] []
             , button [ onClick Render ] [ text "Ok" ]
             ]
         , svg
@@ -220,7 +315,7 @@ view model =
                 :: circle [ cx "300", cy "300", r "297", stroke "white", strokeWidth "5" ] []
                 :: drawParallels model.location
                 ++ drawMeridians model.location
-                ++ (List.map (drawStar model.location model.day) model.stars)
+                ++ (List.map drawStar model.stars2D)
             )
         ]
 
@@ -261,8 +356,8 @@ drawParallels { lat } =
                     line
                         [ x1 "0"
                         , x2 "600"
-                        , y1 <| toString <| 300 * (1 - cos theta)
-                        , y2 <| toString <| 300 * (1 - cos theta)
+                        , y1 <| renorm (cos theta) (-1)
+                        , y2 <| renorm (cos theta) (-1)
                         ]
                         []
                 else
@@ -281,7 +376,7 @@ drawMeridians { lat } =
             if abs (sin phi * cos l) > 1.0e-8 then
                 circle
                     [ cx <| renorm (-1 / (tan phi * cos l)) 2
-                    , cy <| renorm (1 * tan l) 2
+                    , cy <| renorm (tan l) 2
                     , r <| toString <| 300 / (abs (sin phi * cos l))
                     ]
                     []
@@ -303,28 +398,12 @@ renorm x xn =
     toString (600 * (1 / 2 + x / xn))
 
 
-drawStar : Location -> T.DateTime -> Star -> Svg.Svg msg
-drawStar ({ lat, lng } as loc) day { mag, ra, de } =
-    let
-        d =
-            degrees de
-
-        l =
-            degrees (lat - 90)
-
-        a =
-            turns ((ra - localSideralTime day loc) / 24) + pi / 2
-
-        y =
-            cos d * sin a
-
-        den =
-            1 - sin l * y + cos l * sin d
-    in
-        circle
-            [ cx <| toString <| 300 * (1 + (cos d * cos a) / den)
-            , cy <| toString <| 300 * (1 + (cos l * y + sin l * sin d) / den)
-            , r (toString (6 - mag))
-            , fill "white"
-            ]
-            []
+drawStar : Position -> Svg.Svg msg
+drawStar ( x, y, mag ) =
+    circle
+        [ cx <| renorm x 1
+        , cy <| renorm y 1
+        , r (toString (6 - mag))
+        , fill "white"
+        ]
+        []
