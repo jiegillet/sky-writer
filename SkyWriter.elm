@@ -1,7 +1,7 @@
 module SkyWriter exposing (..)
 
 import Html exposing (..)
-import Html.Attributes exposing (placeholder, align)
+import Html.Attributes exposing (placeholder, align, disabled)
 import Html.Events exposing (onClick, onInput)
 import Svg exposing (Svg, svg, circle, line, mask, rect)
 import Svg.Attributes exposing (..)
@@ -87,10 +87,10 @@ init : ( Model, Cmd Msg )
 init =
     ( { address = ""
       , location = defaultLoc
-      , name = "GAKKUN"
+      , name = ""
       , stars = []
       , stars2D = []
-      , day = parseTime "2017-06-14"
+      , day = j2000
       , circles = Array.empty
       , segments = []
       , screen = Info
@@ -102,7 +102,8 @@ init =
 
 defaultLoc : Location
 defaultLoc =
-    Location "Naha, Okinawa" 26.213 127.679
+    -- Location "Naha, Okinawa" 26.213 127.679
+    Location "North pole" 15 0
 
 
 
@@ -323,6 +324,21 @@ getPosition ({ lat, lng } as loc) day { mag, ra, de } =
 -- VIEW
 
 
+size : Float
+size =
+    500
+
+
+sizeStr : String
+sizeStr =
+    toString size
+
+
+halfSize : String
+halfSize =
+    toString (size / 2)
+
+
 view : Model -> Html Msg
 view model =
     div
@@ -344,27 +360,33 @@ view model =
                 , h3 [] [ text "What day were you born?" ]
                 , div [] [ input [ type_ "date", onInput ReadDate ] [] ]
                 , h3 [] []
-                , div [] [ button [ onClick Render ] [ text "Continue" ] ]
+                , div []
+                    [ button
+                        [ onClick Render, disabled (List.isEmpty model.stars) ]
+                        [ text "Continue" ]
+                    ]
                 ]
 
             StarMap ->
                 [ svg
-                    [ width "600"
-                    , height "600"
-                    , viewBox "0 0 600 600"
+                    [ width sizeStr
+                    , height sizeStr
+                    , viewBox <| "0 0 " ++ sizeStr ++ " " ++ sizeStr
                     , stroke "white"
                     , fill "none"
                     , strokeWidth "0.5"
                     , Svg.Attributes.mask "url(#hole)"
                     ]
                     (circleMask
-                        :: circle [ cx "300", cy "300", r "297", stroke "white", strokeWidth "5" ] []
+                        :: bigCircle
                         :: drawParallels model.location
                         ++ drawMeridians model.location
                         ++ (List.map drawStar model.stars2D)
-                     -- ++ viewCircles model.circles
-                     -- ++ viewSegments model.segments
+                        ++ viewCircles model.circles
+                        ++ viewSegments model.segments
                     )
+                , h3 [] [ text ("HAPPY WHITE DAY, " ++ model.name) ]
+                , h3 [] [ text ("THIS IS THE NIGHT SKY ON THE DAY YOU WEW BORN") ]
                 ]
 
 
@@ -377,9 +399,21 @@ circleMask =
     Svg.defs []
         [ Svg.mask [ id "hole" ]
             [ rect [ width "100%", height "100%", fill "black" ] []
-            , circle [ r "300", cx "300", cy "300", fill "white" ] []
+            , circle [ r halfSize, cx halfSize, cy halfSize, fill "white" ] []
             ]
         ]
+
+
+bigCircle : Svg.Svg msg
+bigCircle =
+    circle
+        [ cx halfSize
+        , cy halfSize
+        , r <| toString (size / 2 - 3)
+        , stroke "white"
+        , strokeWidth "5"
+        ]
+        []
 
 
 drawParallels : Location -> List (Svg.Svg msg)
@@ -395,21 +429,24 @@ drawParallels { lat } =
             in
                 if abs k > 1.0e-8 then
                     circle
-                        [ cx "300"
-                        , cy <| renorm ((-1) * cos l / k) 2
-                        , r <| toString <| 300 * sqrt (1 - cos theta ^ 2) / abs k
-                        ]
-                        []
-                else if theta <= pi / 2 then
-                    line
-                        [ x1 "0"
-                        , x2 "600"
-                        , y1 <| renorm (cos theta) (-1)
-                        , y2 <| renorm (cos theta) (-1)
+                        [ cx halfSize
+                        , cy <| scaleUp ((-1) * cos l / k)
+                        , r <|
+                            toString <|
+                                size
+                                    / 2
+                                    * sqrt (1 - cos theta ^ 2)
+                                    / abs k
                         ]
                         []
                 else
-                    svg [] []
+                    line
+                        [ x1 "0"
+                        , x2 sizeStr
+                        , y1 <| scaleUp (-1 * cos theta)
+                        , y2 <| scaleUp (-1 * cos theta)
+                        ]
+                        []
     in
         List.map (\n -> mer <| pi * (toFloat n) / 12) (List.range 1 11)
 
@@ -423,34 +460,41 @@ drawMeridians { lat } =
         par phi =
             if abs (sin phi * cos l) > 1.0e-8 then
                 circle
-                    [ cx <| renorm (-1 / (tan phi * cos l)) 2
-                    , cy <| renorm (tan l) 2
-                    , r <| toString <| 300 / (abs (sin phi * cos l))
+                    [ cx <| scaleUp (-1 / (tan phi * cos l))
+                    , cy <| scaleUp (tan l)
+                    , r <| toString <| size / 2 / (abs (sin phi * cos l))
                     ]
                     []
             else
                 line
                     [ y1 "0"
-                    , y2 "600"
-                    , x1 "300"
-                    , x2 "300"
-                    , transform <| "rotate(" ++ toString (phi / pi * 180) ++ " 300 300)"
+                    , y2 sizeStr
+                    , x1 halfSize
+                    , x2 halfSize
+                    , transform <|
+                        "rotate("
+                            ++ toString (phi / pi * 180)
+                            ++ " "
+                            ++ halfSize
+                            ++ " "
+                            ++ halfSize
+                            ++ ")"
                     ]
                     []
     in
         List.map (\n -> par <| pi * (toFloat n) / 12) (List.range 0 11)
 
 
-renorm : Float -> Float -> String
-renorm x xn =
-    toString (600 * (1 / 2 + x / xn))
+scaleUp : Float -> String
+scaleUp x =
+    toString (size * (1 + x) / 2)
 
 
 drawStar : Position -> Svg.Svg msg
 drawStar ( x, y, mag ) =
     circle
-        [ cx <| renorm x 1
-        , cy <| renorm y 1
+        [ cx <| scaleUp x
+        , cy <| scaleUp y
         , r (toString (6 - mag))
         , fill "white"
         ]
@@ -463,8 +507,8 @@ viewCircles =
         viewCircle { style, x, y, mag } =
             circle
                 (Animation.render style
-                    ++ [ cx <| renorm x 1
-                       , cy <| renorm y 1
+                    ++ [ cx <| scaleUp x
+                       , cy <| scaleUp y
                        , r <| toString (6 - mag)
                        ]
                 )
@@ -493,10 +537,10 @@ initAnim : List ( Float, Float, Float ) -> String -> ( Circles, Segments )
 initAnim pos name =
     let
         theta =
-            atan2 4 (4 * (toFloat <| String.length name) - 1)
+            atan2 4 (5 * (toFloat <| String.length name) - 2)
 
         l =
-            0.9 * sin theta / 4
+            0.9 * sin theta / 2
 
         posIn =
             List.filter (\( x, y, _ ) -> x ^ 2 + y ^ 2 <= 1) pos
@@ -524,11 +568,11 @@ initAnim pos name =
                         )
                         lines
             in
-                ( x0 + 4 * l, circ ++ pts, seg ++ lns )
+                ( x0 + 5 * l, circ ++ pts, seg ++ lns )
 
         ( _, circ, seg ) =
             List.foldl gather
-                ( (-1 / 2) * cos theta, [], [] )
+                ( -1 * cos theta + 0.05, [], [] )
                 (String.toList name)
 
         mkCircles =
@@ -537,7 +581,7 @@ initAnim pos name =
                     (\( x, y, m ) ->
                         Circle
                             (Animation.styleWith
-                                (Animation.spring { stiffness = 100, damping = 20 })
+                                (Animation.spring { stiffness = 100, damping = 10 })
                                 [ Animation.strokeWidth 0
                                 , Animation.fill Color.white
                                 , Animation.stroke Color.white
@@ -569,9 +613,13 @@ initAnim pos name =
 
 getCoord : Int -> Circles -> ( Float, Float )
 getCoord n pts =
-    ( Maybe.withDefault 0 <| Maybe.map (\{ x } -> 600 * (1 / 2 + x)) <| Array.get n pts
-    , Maybe.withDefault 0 <| Maybe.map (\{ y } -> 600 * (1 / 2 + y)) <| Array.get n pts
-    )
+    let
+        get f =
+            Maybe.withDefault 0 <| Maybe.map f <| Array.get n pts
+    in
+        ( get (\{ x } -> size * (1 + x) / 2)
+        , get (\{ y } -> size * (1 + y) / 2)
+        )
 
 
 animateCircles : Circles -> Circles
