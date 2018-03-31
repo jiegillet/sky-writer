@@ -20391,7 +20391,6 @@ var _jiegillet$sky_writer$SkyWriter$viewSegments = function () {
 	return _elm_lang$core$List$map(viewSegment);
 }();
 var _jiegillet$sky_writer$SkyWriter$size = 500;
-var _jiegillet$sky_writer$SkyWriter$sizeStr = _elm_lang$core$Basics$toString(_jiegillet$sky_writer$SkyWriter$size);
 var _jiegillet$sky_writer$SkyWriter$halfSize = _elm_lang$core$Basics$toString(_jiegillet$sky_writer$SkyWriter$size / 2);
 var _jiegillet$sky_writer$SkyWriter$circleMask = A2(
 	_elm_lang$svg$Svg$defs,
@@ -20411,14 +20410,30 @@ var _jiegillet$sky_writer$SkyWriter$circleMask = A2(
 					_elm_lang$svg$Svg$rect,
 					{
 						ctor: '::',
-						_0: _elm_lang$svg$Svg_Attributes$width('100%'),
+						_0: _elm_lang$svg$Svg_Attributes$x('-5'),
 						_1: {
 							ctor: '::',
-							_0: _elm_lang$svg$Svg_Attributes$height('100%'),
+							_0: _elm_lang$svg$Svg_Attributes$y('-5'),
 							_1: {
 								ctor: '::',
-								_0: _elm_lang$svg$Svg_Attributes$fill('black'),
-								_1: {ctor: '[]'}
+								_0: _elm_lang$svg$Svg_Attributes$width(
+									A2(
+										_elm_lang$core$Basics_ops['++'],
+										_elm_lang$core$Basics$toString(_jiegillet$sky_writer$SkyWriter$size + 10),
+										'px')),
+								_1: {
+									ctor: '::',
+									_0: _elm_lang$svg$Svg_Attributes$height(
+										A2(
+											_elm_lang$core$Basics_ops['++'],
+											_elm_lang$core$Basics$toString(_jiegillet$sky_writer$SkyWriter$size + 10),
+											'px')),
+									_1: {
+										ctor: '::',
+										_0: _elm_lang$svg$Svg_Attributes$fill('black'),
+										_1: {ctor: '[]'}
+									}
+								}
 							}
 						}
 					},
@@ -20461,13 +20476,13 @@ var _jiegillet$sky_writer$SkyWriter$bigCircle = A2(
 			_1: {
 				ctor: '::',
 				_0: _elm_lang$svg$Svg_Attributes$r(
-					_elm_lang$core$Basics$toString((_jiegillet$sky_writer$SkyWriter$size / 2) - 3)),
+					_elm_lang$core$Basics$toString(_jiegillet$sky_writer$SkyWriter$size / 2)),
 				_1: {
 					ctor: '::',
 					_0: _elm_lang$svg$Svg_Attributes$stroke('white'),
 					_1: {
 						ctor: '::',
-						_0: _elm_lang$svg$Svg_Attributes$strokeWidth('5'),
+						_0: _elm_lang$svg$Svg_Attributes$strokeWidth('8'),
 						_1: {ctor: '[]'}
 					}
 				}
@@ -20514,7 +20529,8 @@ var _jiegillet$sky_writer$SkyWriter$drawParallels = function (_p2) {
 				_0: _elm_lang$svg$Svg_Attributes$x1('0'),
 				_1: {
 					ctor: '::',
-					_0: _elm_lang$svg$Svg_Attributes$x2(_jiegillet$sky_writer$SkyWriter$sizeStr),
+					_0: _elm_lang$svg$Svg_Attributes$x2(
+						_elm_lang$core$Basics$toString(_jiegillet$sky_writer$SkyWriter$size)),
 					_1: {
 						ctor: '::',
 						_0: _elm_lang$svg$Svg_Attributes$y1(
@@ -20576,7 +20592,8 @@ var _jiegillet$sky_writer$SkyWriter$drawMeridians = function (_p4) {
 				_0: _elm_lang$svg$Svg_Attributes$y1('0'),
 				_1: {
 					ctor: '::',
-					_0: _elm_lang$svg$Svg_Attributes$y2(_jiegillet$sky_writer$SkyWriter$sizeStr),
+					_0: _elm_lang$svg$Svg_Attributes$y2(
+						_elm_lang$core$Basics$toString(_jiegillet$sky_writer$SkyWriter$size)),
 					_1: {
 						ctor: '::',
 						_0: _elm_lang$svg$Svg_Attributes$x1(_jiegillet$sky_writer$SkyWriter$halfSize),
@@ -20680,7 +20697,7 @@ var _jiegillet$sky_writer$SkyWriter$getCoord = F2(
 		var get = function (f) {
 			return A2(
 				_elm_lang$core$Maybe$withDefault,
-				0,
+				1000,
 				A2(
 					_elm_lang$core$Maybe$map,
 					f,
@@ -20717,7 +20734,7 @@ var _jiegillet$sky_writer$SkyWriter$animateSegments = function (pts) {
 							_mdgriffith$elm_style_animation$Animation$interrupt,
 							{
 								ctor: '::',
-								_0: _mdgriffith$elm_style_animation$Animation$wait(3000 + (5 * xf)),
+								_0: _mdgriffith$elm_style_animation$Animation$wait(2000 + (5 * xf)),
 								_1: {
 									ctor: '::',
 									_0: _mdgriffith$elm_style_animation$Animation$set(
@@ -20941,7 +20958,7 @@ var _jiegillet$sky_writer$SkyWriter$initAnim = F2(
 				var _p28 = _p27;
 				return A2(
 					_elm_lang$core$Maybe$withDefault,
-					{ctor: '_Tuple3', _0: 0, _1: 0, _2: 0},
+					{ctor: '_Tuple3', _0: 1000, _1: 1000, _2: 0},
 					A2(
 						_elm_community$list_extra$List_Extra$minimumBy,
 						function (_p29) {
@@ -21279,7 +21296,7 @@ var _jiegillet$sky_writer$SkyWriter$view = function (model) {
 						_0: 'height',
 						_1: A2(
 							_elm_lang$core$Basics_ops['++'],
-							_elm_lang$core$Basics$toString(model.size.height),
+							_elm_lang$core$Basics$toString(model.size.height + 2),
 							'px')
 					},
 					_1: {
@@ -21289,7 +21306,7 @@ var _jiegillet$sky_writer$SkyWriter$view = function (model) {
 							_0: 'width',
 							_1: A2(
 								_elm_lang$core$Basics_ops['++'],
-								_elm_lang$core$Basics$toString(model.size.width),
+								_elm_lang$core$Basics$toString(model.size.width + 1),
 								'px')
 						},
 						_1: {
@@ -21467,6 +21484,7 @@ var _jiegillet$sky_writer$SkyWriter$view = function (model) {
 					}
 				};
 			} else {
+				var s = ((A2(_elm_lang$core$Basics$min, model.size.height, model.size.width) * 7) / 10) | 0;
 				return {
 					ctor: '::',
 					_0: A2(
@@ -21474,11 +21492,11 @@ var _jiegillet$sky_writer$SkyWriter$view = function (model) {
 						{
 							ctor: '::',
 							_0: _elm_lang$svg$Svg_Attributes$width(
-								_elm_lang$core$Basics$toString(((model.size.width * 7) / 10) | 0)),
+								_elm_lang$core$Basics$toString(s)),
 							_1: {
 								ctor: '::',
 								_0: _elm_lang$svg$Svg_Attributes$height(
-									_elm_lang$core$Basics$toString(((model.size.width * 7) / 10) | 0)),
+									_elm_lang$core$Basics$toString(s)),
 								_1: {
 									ctor: '::',
 									_0: _elm_lang$svg$Svg_Attributes$viewBox(
@@ -21487,8 +21505,11 @@ var _jiegillet$sky_writer$SkyWriter$view = function (model) {
 											'0 0 ',
 											A2(
 												_elm_lang$core$Basics_ops['++'],
-												_jiegillet$sky_writer$SkyWriter$sizeStr,
-												A2(_elm_lang$core$Basics_ops['++'], ' ', _jiegillet$sky_writer$SkyWriter$sizeStr)))),
+												_elm_lang$core$Basics$toString(_jiegillet$sky_writer$SkyWriter$size),
+												A2(
+													_elm_lang$core$Basics_ops['++'],
+													' ',
+													_elm_lang$core$Basics$toString(_jiegillet$sky_writer$SkyWriter$size))))),
 									_1: {
 										ctor: '::',
 										_0: _elm_lang$svg$Svg_Attributes$stroke('white'),

@@ -334,11 +334,6 @@ size =
     500
 
 
-sizeStr : String
-sizeStr =
-    toString size
-
-
 halfSize : String
 halfSize =
     toString (size / 2)
@@ -348,8 +343,8 @@ view : Model -> Html Msg
 view model =
     div
         [ Html.Attributes.style
-            [ ( "height", (toString model.size.height) ++ "px" )
-            , ( "width", (toString model.size.width) ++ "px" )
+            [ ( "height", (toString (model.size.height + 2)) ++ "px" )
+            , ( "width", (toString (model.size.width + 1)) ++ "px" )
             , ( "backgroundColor", "black" )
             , ( "color", "white" )
             ]
@@ -375,31 +370,41 @@ view model =
                 ]
 
             StarMap ->
-                [ svg
-                    [ width (toString (model.size.width * 7 // 10))
-                    , height (toString (model.size.width * 7 // 10))
-                    , viewBox <| "0 0 " ++ sizeStr ++ " " ++ sizeStr
-                    , stroke "white"
-                    , fill "none"
-                    , strokeWidth "0.5"
-                    , Svg.Attributes.mask "url(#hole)"
+                let
+                    s =
+                        (Basics.min model.size.height model.size.width) * 7 // 10
+                in
+                    [ svg
+                        [ width (toString s)
+                        , height (toString s)
+                        , viewBox <| "0 0 " ++ toString size ++ " " ++ toString size
+                        , stroke "white"
+                        , fill "none"
+                        , strokeWidth "0.5"
+                        , Svg.Attributes.mask "url(#hole)"
+                        ]
+                        (circleMask
+                            :: bigCircle
+                            :: drawParallels model.location
+                            ++ drawMeridians model.location
+                            ++ List.map drawStar model.stars2D
+                            ++ viewCircles model.circles
+                            ++ viewSegments model.segments
+                        )
+                    , h3 []
+                        [ text <|
+                            Time.Format.format
+                                "%A, %B %-d, %Y"
+                                (T.toTimestamp model.day)
+                        ]
+                    , h3 [] [ text model.location.loc ]
+                    , h3 []
+                        [ text <|
+                            "You were born under these stars, "
+                                ++ model.name
+                        ]
+                    , h3 [] [ text ("Happy White Day") ]
                     ]
-                    (circleMask
-                        :: bigCircle
-                        :: drawParallels model.location
-                        ++ drawMeridians model.location
-                        ++ List.map drawStar model.stars2D
-                        ++ viewCircles model.circles
-                        ++ viewSegments model.segments
-                    )
-                , h3 []
-                    [ text <|
-                        Time.Format.format "%A, %B %-d, %Y" (T.toTimestamp model.day)
-                    ]
-                , h3 [] [ text model.location.loc ]
-                , h3 [] [ text <| "You were born under these stars, " ++ model.name ]
-                , h3 [] [ text ("Happy White Day") ]
-                ]
 
 
 
@@ -410,7 +415,14 @@ circleMask : Svg.Svg msg
 circleMask =
     Svg.defs []
         [ Svg.mask [ id "hole" ]
-            [ rect [ width "100%", height "100%", fill "black" ] []
+            [ rect
+                [ x "-5"
+                , y "-5"
+                , width <| toString (size + 10) ++ "px"
+                , height <| toString (size + 10) ++ "px"
+                , fill "black"
+                ]
+                []
             , circle [ r halfSize, cx halfSize, cy halfSize, fill "white" ] []
             ]
         ]
@@ -421,9 +433,9 @@ bigCircle =
     circle
         [ cx halfSize
         , cy halfSize
-        , r <| toString (size / 2 - 3)
+        , r <| toString (size / 2)
         , stroke "white"
-        , strokeWidth "5"
+        , strokeWidth "8"
         ]
         []
 
@@ -454,7 +466,7 @@ drawParallels { lat } =
                 else
                     line
                         [ x1 "0"
-                        , x2 sizeStr
+                        , x2 <| toString size
                         , y1 <| scaleUp (-1 * cos theta)
                         , y2 <| scaleUp (-1 * cos theta)
                         ]
@@ -480,7 +492,7 @@ drawMeridians { lat } =
             else
                 line
                     [ y1 "0"
-                    , y2 sizeStr
+                    , y2 <| toString size
                     , x1 halfSize
                     , x2 halfSize
                     , transform <|
@@ -558,7 +570,7 @@ initAnim pos name =
             List.filter (\( x, y, _ ) -> x ^ 2 + y ^ 2 <= 1) pos
 
         closestPoint x0 ( xp, yp ) =
-            Maybe.withDefault ( 0, 0, 0 ) <|
+            Maybe.withDefault ( 1000, 1000, 0 ) <|
                 minimumBy
                     (\( x, y, _ ) ->
                         (x - x0 - xp * l) ^ 2 + (y - yp * l + sin theta / 2) ^ 2
@@ -616,7 +628,7 @@ getCoord : Int -> Circles -> ( Float, Float )
 getCoord n pts =
     let
         get f =
-            Maybe.withDefault 0 <| Maybe.map f <| Array.get n pts
+            Maybe.withDefault 1000 <| Maybe.map f <| Array.get n pts
     in
         ( get (\{ x } -> size * (1 + x) / 2)
         , get (\{ y } -> size * (1 + y) / 2)
@@ -658,7 +670,7 @@ animateSegments pts =
                             getCoord seg.to points
                     in
                         Animation.interrupt
-                            [ Animation.wait <| 3000 + 5 * xf
+                            [ Animation.wait <| 2000 + 5 * xf
                             , Animation.set
                                 [ Animation.path
                                     [ Animation.moveTo xf yf
