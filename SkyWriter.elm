@@ -6,6 +6,7 @@ import Html.Events exposing (onClick, onInput)
 import Svg exposing (Svg, svg, circle, line, mask, rect)
 import Svg.Attributes exposing (..)
 import Time.DateTime as T exposing (DateTime)
+import Time.Format
 import Http
 import Json.Decode as Decode
 import Result
@@ -102,8 +103,7 @@ init =
 
 defaultLoc : Location
 defaultLoc =
-    -- Location "Naha, Okinawa" 26.213 127.679
-    Location "North pole" 15 0
+    Location "Onna, Okinawa" 26.4975 127.8535
 
 
 
@@ -138,7 +138,7 @@ update msg model =
             ( { model | address = address }, Cmd.none )
 
         ReadName name ->
-            ( { model | name = format name }, Cmd.none )
+            ( { model | name = name }, Cmd.none )
 
         ReadDate date ->
             ( { model | day = parseTime date }, Cmd.none )
@@ -161,7 +161,7 @@ update msg model =
                     List.map (getPosition location model.day) model.stars
 
                 ( circ, seg ) =
-                    initAnim stars2D model.name
+                    initAnim stars2D (format model.name)
             in
                 ( { model
                     | location = location
@@ -190,7 +190,7 @@ update msg model =
 
 
 
--- format name to A-Z and space only
+-- format name to allow A-Z and space only
 
 
 format : String -> String
@@ -311,13 +311,10 @@ getPosition ({ lat, lng } as loc) day { mag, ra, de } =
         a =
             turns ((ra - localSideralTime day loc) / 24) + pi / 2
 
-        y =
-            cos d * sin a
-
         den =
-            1 - sin l * y + cos l * sin d
+            1 - sin l * cos d * sin a + cos l * sin d
     in
-        ( (cos d * cos a) / den, (cos l * y + sin l * sin d) / den, mag )
+        ( cos d * cos a / den, (cos l * cos d * sin a + sin l * sin d) / den, mag )
 
 
 
@@ -357,7 +354,7 @@ view model =
                 , div [] [ input [ placeholder "Gakkun", onInput ReadName ] [] ]
                 , h3 [] [ text "Where were you born?" ]
                 , div [] [ input [ placeholder "Onna, Okinawa", onInput ReadLoc ] [] ]
-                , h3 [] [ text "What day were you born?" ]
+                , h3 [] [ text "When were you born?" ]
                 , div [] [ input [ type_ "date", onInput ReadDate ] [] ]
                 , h3 [] []
                 , div []
@@ -385,8 +382,13 @@ view model =
                         ++ viewCircles model.circles
                         ++ viewSegments model.segments
                     )
-                , h3 [] [ text ("HAPPY WHITE DAY, " ++ model.name) ]
-                , h3 [] [ text ("THIS IS THE NIGHT SKY ON THE DAY YOU WEW BORN") ]
+                , h3 []
+                    [ text <|
+                        Time.Format.format "%A, %B %-d, %Y" (T.toTimestamp model.day)
+                    ]
+                , h3 [] [ text model.location.loc ]
+                , h3 [] [ text <| "You were born under these stars, " ++ model.name ]
+                , h3 [] [ text ("Happy White Day") ]
                 ]
 
 
@@ -422,7 +424,7 @@ drawParallels { lat } =
         l =
             degrees lat
 
-        mer theta =
+        parallel theta =
             let
                 k =
                     cos theta + sin l
@@ -448,7 +450,7 @@ drawParallels { lat } =
                         ]
                         []
     in
-        List.map (\n -> mer <| pi * (toFloat n) / 12) (List.range 1 11)
+        List.map (\n -> parallel <| pi * (toFloat n) / 12) (List.range 1 11)
 
 
 drawMeridians : Location -> List (Svg.Svg msg)
@@ -457,7 +459,7 @@ drawMeridians { lat } =
         l =
             degrees lat
 
-        par phi =
+        meridian phi =
             if abs (sin phi * cos l) > 1.0e-8 then
                 circle
                     [ cx <| scaleUp (-1 / (tan phi * cos l))
@@ -482,7 +484,7 @@ drawMeridians { lat } =
                     ]
                     []
     in
-        List.map (\n -> par <| pi * (toFloat n) / 12) (List.range 0 11)
+        List.map (\n -> meridian <| pi * (toFloat n) / 12) (List.range 0 11)
 
 
 scaleUp : Float -> String
@@ -495,7 +497,7 @@ drawStar ( x, y, mag ) =
     circle
         [ cx <| scaleUp x
         , cy <| scaleUp y
-        , r (toString (6 - mag))
+        , r <| toString <| 0.9 * (6 - mag)
         , fill "white"
         ]
         []
@@ -509,7 +511,7 @@ viewCircles =
                 (Animation.render style
                     ++ [ cx <| scaleUp x
                        , cy <| scaleUp y
-                       , r <| toString (6 - mag)
+                       , r <| toString <| 0.92 * (6 - mag)
                        ]
                 )
                 []
@@ -523,7 +525,7 @@ viewSegments =
         viewSegment : Segment -> Svg msg
         viewSegment { style } =
             Svg.path
-                (stroke "yellow" :: strokeWidth "2" :: Animation.render style)
+                (stroke "yellow" :: strokeWidth "1.5" :: Animation.render style)
                 []
     in
         List.map viewSegment
@@ -558,17 +560,17 @@ initAnim pos name =
                 { points, lines } =
                     Maybe.withDefault (Letter [] []) (Dict.get c alphabet)
 
-                pts =
+                newCirc =
                     List.map (closestPoint x0) points
 
-                lns =
-                    List.map
-                        (\( i, j ) ->
-                            ( i + List.length circ, j + List.length circ )
-                        )
-                        lines
+                newSeg =
+                    let
+                        n =
+                            List.length circ
+                    in
+                        List.map (\( i, j ) -> ( i + n, j + n )) lines
             in
-                ( x0 + 5 * l, circ ++ pts, seg ++ lns )
+                ( x0 + 5 * l, circ ++ newCirc, seg ++ newSeg )
 
         ( _, circ, seg ) =
             List.foldl gather
@@ -576,37 +578,27 @@ initAnim pos name =
                 (String.toList name)
 
         mkCircles =
-            Array.fromList <|
-                List.map
-                    (\( x, y, m ) ->
-                        Circle
-                            (Animation.styleWith
-                                (Animation.spring { stiffness = 100, damping = 10 })
-                                [ Animation.strokeWidth 0
-                                , Animation.fill Color.white
-                                , Animation.stroke Color.white
-                                ]
-                            )
-                            x
-                            y
-                            m
-                    )
-                    circ
+            let
+                style =
+                    Animation.style
+                        [ Animation.strokeWidth 0
+                        , Animation.fill Color.white
+                        , Animation.stroke Color.white
+                        ]
+            in
+                Array.fromList <|
+                    List.map (\( x, y, m ) -> Circle style x y m) circ
 
         mkSegments circles =
-            List.map
-                (\( i, j ) ->
-                    Segment
-                        (Animation.styleWith
-                            (Animation.spring { stiffness = 10, damping = 5 })
-                            [ Animation.path
-                                [ Animation.moveTo 0 0, Animation.lineTo 0 0 ]
-                            ]
-                        )
-                        i
-                        j
-                )
-                seg
+            let
+                style =
+                    Animation.styleWith
+                        (Animation.spring { stiffness = 10, damping = 5 })
+                        [ Animation.path
+                            [ Animation.moveTo 0 0, Animation.lineTo 0 0 ]
+                        ]
+            in
+                List.map (\( i, j ) -> Segment style i j) seg
     in
         ( mkCircles, mkSegments mkCircles )
 
@@ -631,7 +623,7 @@ animateCircles =
                     Animation.queue
                         [ Animation.wait <| 1000 + 100 * circ.x
                         , Animation.to
-                            [ Animation.strokeWidth 15
+                            [ Animation.strokeWidth 10
                             , Animation.fill Color.yellow
                             , Animation.stroke Color.yellow
                             ]
@@ -657,7 +649,7 @@ animateSegments pts =
                             getCoord seg.to points
                     in
                         Animation.interrupt
-                            [ Animation.wait <| 3000 + 10 * xf
+                            [ Animation.wait <| 3000 + 5 * xf
                             , Animation.set
                                 [ Animation.path
                                     [ Animation.moveTo xf yf
