@@ -340,8 +340,8 @@ view : Model -> Html Msg
 view model =
     div
         [ Html.Attributes.style
-            [ ( "backgroundColor", "#000" )
-            , ( "height", "100%" )
+            [ ( "height", "1000px" )
+            , ( "backgroundColor", "black" )
             , ( "color", "white" )
             ]
         , align "center"
@@ -349,7 +349,8 @@ view model =
     <|
         case model.screen of
             Info ->
-                [ h1 [] [ text "Welcome" ]
+                [ h1 [ Html.Attributes.style [ ( "margin", "0" ) ] ]
+                    [ text "Welcome" ]
                 , h3 [] [ text "What is your first name?" ]
                 , div [] [ input [ placeholder "Gakkun", onInput ReadName ] [] ]
                 , h3 [] [ text "Where were you born?" ]
