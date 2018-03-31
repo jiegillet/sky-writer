@@ -3,6 +3,8 @@ module SkyWriter exposing (..)
 import Html exposing (..)
 import Html.Attributes exposing (placeholder, align, disabled)
 import Html.Events exposing (onClick, onInput)
+import Window exposing (Size)
+import Task exposing (perform)
 import Svg exposing (Svg, svg, circle, line, mask, rect)
 import Svg.Attributes exposing (..)
 import Time.DateTime as T exposing (DateTime)
@@ -44,6 +46,7 @@ type alias Model =
     , segments : Segments
     , screen : Sreen
     , error : String
+    , size : Size
     }
 
 
@@ -96,8 +99,9 @@ init =
       , segments = []
       , screen = Info
       , error = ""
+      , size = Size 640 480
       }
-    , getStarData
+    , Cmd.batch [ perform GetSize Window.size, getStarData ]
     )
 
 
@@ -123,6 +127,7 @@ subscriptions { circles, segments } =
 
 type Msg
     = Render
+    | GetSize Size
     | ReadLoc String
     | ReadName String
     | ReadDate String
@@ -134,6 +139,9 @@ type Msg
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
+        GetSize size ->
+            ( { model | size = size }, Cmd.none )
+
         ReadLoc address ->
             ( { model | address = address }, Cmd.none )
 
@@ -340,7 +348,8 @@ view : Model -> Html Msg
 view model =
     div
         [ Html.Attributes.style
-            [ ( "height", "1000px" )
+            [ ( "height", (toString model.size.height) ++ "px" )
+            , ( "width", (toString model.size.width) ++ "px" )
             , ( "backgroundColor", "black" )
             , ( "color", "white" )
             ]
@@ -367,8 +376,8 @@ view model =
 
             StarMap ->
                 [ svg
-                    [ width sizeStr
-                    , height sizeStr
+                    [ width (toString (model.size.width * 7 // 10))
+                    , height (toString (model.size.width * 7 // 10))
                     , viewBox <| "0 0 " ++ sizeStr ++ " " ++ sizeStr
                     , stroke "white"
                     , fill "none"
@@ -379,7 +388,7 @@ view model =
                         :: bigCircle
                         :: drawParallels model.location
                         ++ drawMeridians model.location
-                        ++ (List.map drawStar model.stars2D)
+                        ++ List.map drawStar model.stars2D
                         ++ viewCircles model.circles
                         ++ viewSegments model.segments
                     )
@@ -593,8 +602,7 @@ initAnim pos name =
         mkSegments circles =
             let
                 style =
-                    Animation.styleWith
-                        (Animation.spring { stiffness = 10, damping = 5 })
+                    Animation.style
                         [ Animation.path
                             [ Animation.moveTo 0 0, Animation.lineTo 0 0 ]
                         ]
