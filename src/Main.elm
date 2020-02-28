@@ -254,7 +254,7 @@ getLocation : String -> Cmd Msg
 getLocation loc =
     let
         url =
-            "https://maps.googleapis.com/maps/api/geocode/json?key=AIzaSyB4-TN5fQZt0C4ZvX21n4a-8qsPfhYjfF4&address="
+            "https://maps.googleapis.com/maps/api/geocode/json?key=AIzaSyD9vT3RWO8YwTXLg2rH8xZMLouB6XHGI4U&address="
     in
     Http.get { url = url ++ loc, expect = Http.expectJson NewLocation decodeLocation }
 
