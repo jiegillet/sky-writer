@@ -1,29 +1,29 @@
-module SkyWriter exposing (..)
+module Main exposing (..)
 
-import Html exposing (..)
-import Html.Attributes exposing (placeholder, align, disabled)
-import Html.Events exposing (onClick, onInput)
-import Window exposing (Size)
-import Task exposing (perform)
-import Svg exposing (Svg, svg, circle, line, mask, rect)
-import Svg.Attributes exposing (..)
-import Time.DateTime as T exposing (DateTime)
-import Time.Format
-import Http
-import Json.Decode as Decode
-import Result
-import Maybe
-import Array exposing (Array)
-import Dict
-import List.Extra exposing (minimumBy)
 import Animation
-import Color
+import Array exposing (Array)
+import Browser
+import Browser.Dom as Dom exposing (Viewport)
+import Dict
+import Html exposing (..)
+import Html.Attributes exposing (align, disabled, placeholder, style)
+import Html.Events exposing (onClick, onInput)
+import Http
+import Iso8601
+import Json.Decode as Decode
 import Letters exposing (Letter, alphabet)
-import Debug
+import List.Extra exposing (minimumBy)
+import Maybe
+import Result
+import Svg exposing (Svg, circle, line, mask, rect, svg)
+import Svg.Attributes exposing (..)
+import Task
+import Time exposing (Month(..), Posix, Weekday(..))
+import Time.Extra as T
 
 
 main =
-    Html.program
+    Browser.document
         { init = init
         , view = view
         , update = update
@@ -41,10 +41,10 @@ type alias Model =
     , name : String
     , stars : List Star
     , stars2D : List Position
-    , day : DateTime
+    , day : Posix
     , circles : Circles
     , segments : Segments
-    , screen : Sreen
+    , screen : Screen
     , error : String
     , size : Size
     }
@@ -78,7 +78,11 @@ type alias Segment =
     { style : Animation.State, from : Int, to : Int }
 
 
-type Sreen
+type alias Size =
+    { width : Float, height : Float }
+
+
+type Screen
     = Info
     | StarMap
 
@@ -87,8 +91,8 @@ type Sreen
 -- INIT
 
 
-init : ( Model, Cmd Msg )
-init =
+init : () -> ( Model, Cmd Msg )
+init _ =
     ( { address = ""
       , location = defaultLoc
       , name = ""
@@ -101,7 +105,7 @@ init =
       , error = ""
       , size = Size 640 480
       }
-    , Cmd.batch [ perform GetSize Window.size, getStarData ]
+    , Cmd.batch [ Task.perform GetSize Dom.getViewport, getStarData ]
     )
 
 
@@ -127,7 +131,7 @@ subscriptions { circles, segments } =
 
 type Msg
     = Render
-    | GetSize Size
+    | GetSize Viewport
     | ReadLoc String
     | ReadName String
     | ReadDate String
@@ -139,8 +143,8 @@ type Msg
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        GetSize size ->
-            ( { model | size = size }, Cmd.none )
+        GetSize { viewport } ->
+            ( { model | size = Size viewport.width viewport.height }, Cmd.none )
 
         ReadLoc address ->
             ( { model | address = address }, Cmd.none )
@@ -158,7 +162,7 @@ update msg model =
             ( { model | stars = stars }, Cmd.none )
 
         NewStars (Err err) ->
-            ( { model | error = toString err }, Cmd.none )
+            ( model, Cmd.none )
 
         NewLocation result ->
             let
@@ -171,30 +175,30 @@ update msg model =
                 ( circ, seg ) =
                     initAnim stars2D (format model.name)
             in
-                ( { model
-                    | location = location
-                    , stars2D = stars2D
-                    , circles = animateCircles circ
-                    , segments = animateSegments circ seg
-                    , screen = StarMap
-                  }
-                , Cmd.none
-                )
+            ( { model
+                | location = location
+                , stars2D = stars2D
+                , circles = animateCircles circ
+                , segments = animateSegments circ seg
+                , screen = StarMap
+              }
+            , Cmd.none
+            )
 
         Animate animMsg ->
             let
-                updateCircle animMsg circ =
-                    { circ | style = Animation.update animMsg circ.style }
+                updateCircle aniMsg circ =
+                    { circ | style = Animation.update aniMsg circ.style }
 
-                updateSegment animMsg p =
-                    { p | style = Animation.update animMsg p.style }
+                updateSegment aniMsg p =
+                    { p | style = Animation.update aniMsg p.style }
             in
-                ( { model
-                    | circles = Array.map (updateCircle animMsg) model.circles
-                    , segments = List.map (updateSegment animMsg) model.segments
-                  }
-                , Cmd.none
-                )
+            ( { model
+                | circles = Array.map (updateCircle animMsg) model.circles
+                , segments = List.map (updateSegment animMsg) model.segments
+              }
+            , Cmd.none
+            )
 
 
 
@@ -207,10 +211,11 @@ format =
         select c =
             if c < 'A' || 'Z' < c then
                 ' '
+
             else
                 c
     in
-        String.trim << String.map select << String.toUpper
+    String.trim << String.map select << String.toUpper
 
 
 
@@ -224,27 +229,21 @@ getStarData =
             "https://cors-anywhere.herokuapp.com/"
 
         url =
-            "http://www.astropical.space/astrodb/api.php?table=stars&which=magnitude&limit=4.9&format=json"
-
-        request =
-            Http.get (forCORS ++ url) decodeStars
+            "https://www.astropical.space/api.php?table=stars&which=magnitude&limit=4.9&format=json"
     in
-        Http.send NewStars request
+    Http.get { url = forCORS ++ url, expect = Http.expectJson NewStars decodeStars }
 
 
 decodeStars : Decode.Decoder (List Star)
 decodeStars =
     let
-        dict =
-            Decode.field "hipstars" (Decode.dict star)
-
         star =
             Decode.map3 Star
                 (Decode.field "mag" Decode.float)
                 (Decode.field "ra" Decode.float)
                 (Decode.field "de" Decode.float)
     in
-        Decode.map Dict.values dict
+    star |> Decode.list |> Decode.field "hipstars"
 
 
 
@@ -256,11 +255,8 @@ getLocation loc =
     let
         url =
             "https://maps.googleapis.com/maps/api/geocode/json?key=AIzaSyB4-TN5fQZt0C4ZvX21n4a-8qsPfhYjfF4&address="
-
-        request =
-            Http.get (url ++ loc) decodeLocation
     in
-        Http.send NewLocation request
+    Http.get { url = url ++ loc, expect = Http.expectJson NewLocation decodeLocation }
 
 
 decodeLocation : Decode.Decoder Location
@@ -269,45 +265,113 @@ decodeLocation =
         res =
             Decode.field "results" << Decode.index 0
     in
-        Decode.map3 Location
-            (res <| Decode.field "formatted_address" Decode.string)
-            (res <| Decode.at [ "geometry", "location", "lat" ] Decode.float)
-            (res <| Decode.at [ "geometry", "location", "lng" ] Decode.float)
+    Decode.map3 Location
+        (res <| Decode.field "formatted_address" Decode.string)
+        (res <| Decode.at [ "geometry", "location", "lat" ] Decode.float)
+        (res <| Decode.at [ "geometry", "location", "lng" ] Decode.float)
 
 
 
 -- Getting Time
 
 
-parseTime : String -> DateTime
+parseTime : String -> Posix
 parseTime s =
-    Result.withDefault j2000 <| T.fromISO8601 <| s ++ "T00:00:00Z"
+    s
+        ++ "T00:00:00Z"
+        |> Iso8601.toTime
+        |> Result.withDefault j2000
 
 
-j2000 : DateTime
+j2000 : Posix
 j2000 =
-    T.setHour 12 <| T.setYear 2000 <| T.dateTime T.zero
+    T.partsToPosix Time.utc (T.Parts 2000 Time.Jan 1 12 0 0 0)
 
 
-gmst : DateTime -> Float
+gmst : Posix -> Float
 gmst d =
     let
         f =
-            (toFloat (T.delta d j2000).hours) / 24
+            toFloat (T.diff T.Hour Time.utc d j2000) / 24
     in
-        18.697374558 + 24.06570982441908 * f
+    18.697374558 + 24.06570982441908 * f
 
 
-localSideralTime : DateTime -> Location -> Float
+localSideralTime : Posix -> Location -> Float
 localSideralTime d { lng } =
     gmst d + 24 * lng / 360
+
+
+fromWeekday : Weekday -> String
+fromWeekday weekday =
+    case weekday of
+        Mon ->
+            "Monday"
+
+        Tue ->
+            "Tuesday"
+
+        Wed ->
+            "Wednesday"
+
+        Thu ->
+            "Thursday"
+
+        Fri ->
+            "Friday"
+
+        Sat ->
+            "Saturday"
+
+        Sun ->
+            "Sunday"
+
+
+fromMonth : Month -> String
+fromMonth month =
+    case month of
+        Jan ->
+            "January"
+
+        Feb ->
+            "February"
+
+        Mar ->
+            "March"
+
+        Apr ->
+            "April"
+
+        May ->
+            "May"
+
+        Jun ->
+            "June"
+
+        Jul ->
+            "July"
+
+        Aug ->
+            "August"
+
+        Sep ->
+            "September"
+
+        Oct ->
+            "October"
+
+        Nov ->
+            "November"
+
+        Dec ->
+            "December"
 
 
 
 -- calculate position on stereographic projection
 
 
-getPosition : Location -> DateTime -> Star -> Position
+getPosition : Location -> Posix -> Star -> Position
 getPosition ({ lat, lng } as loc) day { mag, ra, de } =
     let
         d =
@@ -322,7 +386,7 @@ getPosition ({ lat, lng } as loc) day { mag, ra, de } =
         den =
             1 - sin l * cos d * sin a + cos l * sin d
     in
-        ( cos d * cos a / den, (cos l * cos d * sin a + sin l * sin d) / den, mag )
+    ( cos d * cos a / den, (cos l * cos d * sin a + sin l * sin d) / den, mag )
 
 
 
@@ -336,48 +400,46 @@ size =
 
 halfSize : String
 halfSize =
-    toString (size / 2)
+    String.fromFloat (size / 2)
 
 
-view : Model -> Html Msg
+view : Model -> Browser.Document Msg
 view model =
-    div
-        [ Html.Attributes.style
-            [ ( "height", (toString (model.size.height + 2)) ++ "px" )
-            , ( "width", (toString (model.size.width + 1)) ++ "px" )
-            , ( "backgroundColor", "black" )
-            , ( "color", "white" )
+    Browser.Document "Sky Writer"
+        [ div
+            [ Html.Attributes.style "height" <| String.fromFloat (model.size.height + 2) ++ "px"
+            , Html.Attributes.style "width" <| String.fromFloat (model.size.width + 1) ++ "px"
+            , Html.Attributes.style "backgroundColor" "black"
+            , Html.Attributes.style "color" "white"
+            , align "center"
             ]
-        , align "center"
-        ]
-    <|
-        case model.screen of
-            Info ->
-                [ h1 [ Html.Attributes.style [ ( "margin", "0" ) ] ]
-                    [ text "Welcome" ]
-                , h3 [] [ text "What is your first name?" ]
-                , div [] [ input [ placeholder "Gakkun", onInput ReadName ] [] ]
-                , h3 [] [ text "Where were you born?" ]
-                , div [] [ input [ placeholder "Onna, Okinawa", onInput ReadLoc ] [] ]
-                , h3 [] [ text "When were you born?" ]
-                , div [] [ input [ type_ "date", onInput ReadDate ] [] ]
-                , h3 [] []
-                , div []
-                    [ button
-                        [ onClick Render, disabled (List.isEmpty model.stars) ]
-                        [ text "Continue" ]
+          <|
+            case model.screen of
+                Info ->
+                    [ h1 [ Html.Attributes.style "margin" "0" ] [ text "Welcome" ]
+                    , h3 [] [ text "What is your first name?" ]
+                    , div [] [ input [ placeholder "Gakkun", onInput ReadName ] [] ]
+                    , h3 [] [ text "Where were you born?" ]
+                    , div [] [ input [ placeholder "Onna, Okinawa", onInput ReadLoc ] [] ]
+                    , h3 [] [ text "When were you born?" ]
+                    , div [] [ input [ type_ "date", onInput ReadDate ] [] ]
+                    , h3 [] []
+                    , div []
+                        [ button
+                            [ onClick Render, disabled (List.isEmpty model.stars) ]
+                            [ text "Continue" ]
+                        ]
                     ]
-                ]
 
-            StarMap ->
-                let
-                    s =
-                        (Basics.min model.size.height model.size.width) * 7 // 10
-                in
+                StarMap ->
+                    let
+                        s =
+                            Basics.min model.size.height model.size.width * 7 / 10
+                    in
                     [ svg
-                        [ width (toString s)
-                        , height (toString s)
-                        , viewBox <| "0 0 " ++ toString size ++ " " ++ toString size
+                        [ width (String.fromFloat s)
+                        , height (String.fromFloat s)
+                        , viewBox <| "0 0 " ++ String.fromFloat size ++ " " ++ String.fromFloat size
                         , stroke "white"
                         , fill "none"
                         , strokeWidth "0.5"
@@ -392,10 +454,16 @@ view model =
                             ++ viewSegments model.segments
                         )
                     , h3 []
-                        [ text <|
-                            Time.Format.format
-                                "%A, %B %-d, %Y"
-                                (T.toTimestamp model.day)
+                        [ String.concat
+                            [ Time.toWeekday Time.utc model.day |> fromWeekday
+                            , ", "
+                            , Time.toMonth Time.utc model.day |> fromMonth
+                            , " "
+                            , Time.toDay Time.utc model.day |> String.fromInt
+                            , ", "
+                            , Time.toYear Time.utc model.day |> String.fromInt
+                            ]
+                            |> text
                         ]
                     , h3 [] [ text model.location.loc ]
                     , h3 []
@@ -403,8 +471,9 @@ view model =
                             "You were born under these stars, "
                                 ++ model.name
                         ]
-                    , h3 [] [ text ("Happy White Day") ]
+                    , h3 [] [ text "Happy White Day" ]
                     ]
+        ]
 
 
 
@@ -418,8 +487,8 @@ circleMask =
             [ rect
                 [ x "-5"
                 , y "-5"
-                , width <| toString (size + 10) ++ "px"
-                , height <| toString (size + 10) ++ "px"
+                , width <| String.fromFloat (size + 10) ++ "px"
+                , height <| String.fromFloat (size + 10) ++ "px"
                 , fill "black"
                 ]
                 []
@@ -433,7 +502,7 @@ bigCircle =
     circle
         [ cx halfSize
         , cy halfSize
-        , r <| toString (size / 2)
+        , r halfSize
         , stroke "white"
         , strokeWidth "8"
         ]
@@ -451,28 +520,29 @@ drawParallels { lat } =
                 k =
                     cos theta + sin l
             in
-                if abs k > 1.0e-8 then
-                    circle
-                        [ cx halfSize
-                        , cy <| scaleUp ((-1) * cos l / k)
-                        , r <|
-                            toString <|
-                                size
-                                    / 2
-                                    * sqrt (1 - cos theta ^ 2)
-                                    / abs k
-                        ]
-                        []
-                else
-                    line
-                        [ x1 "0"
-                        , x2 <| toString size
-                        , y1 <| scaleUp (-1 * cos theta)
-                        , y2 <| scaleUp (-1 * cos theta)
-                        ]
-                        []
+            if abs k > 1.0e-8 then
+                circle
+                    [ cx halfSize
+                    , cy <| scaleUp (-1 * cos l / k)
+                    , r <|
+                        String.fromFloat <|
+                            size
+                                / 2
+                                * sqrt (1 - cos theta ^ 2)
+                                / abs k
+                    ]
+                    []
+
+            else
+                line
+                    [ x1 "0"
+                    , x2 <| String.fromFloat size
+                    , y1 <| scaleUp (-1 * cos theta)
+                    , y2 <| scaleUp (-1 * cos theta)
+                    ]
+                    []
     in
-        List.map (\n -> parallel <| pi * (toFloat n) / 12) (List.range 1 11)
+    List.map (\n -> parallel <| pi * toFloat n / 12) (List.range 1 11)
 
 
 drawMeridians : Location -> List (Svg.Svg msg)
@@ -486,18 +556,19 @@ drawMeridians { lat } =
                 circle
                     [ cx <| scaleUp (-1 / (tan phi * cos l))
                     , cy <| scaleUp (tan l)
-                    , r <| toString <| size / 2 / (abs (sin phi * cos l))
+                    , r <| String.fromFloat <| size / 2 / abs (sin phi * cos l)
                     ]
                     []
+
             else
                 line
                     [ y1 "0"
-                    , y2 <| toString size
+                    , y2 <| String.fromFloat size
                     , x1 halfSize
                     , x2 halfSize
                     , transform <|
                         "rotate("
-                            ++ toString (phi / pi * 180)
+                            ++ String.fromFloat (phi / pi * 180)
                             ++ " "
                             ++ halfSize
                             ++ " "
@@ -506,12 +577,12 @@ drawMeridians { lat } =
                     ]
                     []
     in
-        List.map (\n -> meridian <| pi * (toFloat n) / 12) (List.range 0 11)
+    List.map (\n -> meridian <| pi * toFloat n / 12) (List.range 0 11)
 
 
 scaleUp : Float -> String
 scaleUp x =
-    toString (size * (1 + x) / 2)
+    String.fromFloat (size * (1 + x) / 2)
 
 
 drawStar : Position -> Svg.Svg msg
@@ -519,7 +590,7 @@ drawStar ( x, y, mag ) =
     circle
         [ cx <| scaleUp x
         , cy <| scaleUp y
-        , r <| toString <| 0.9 * (6 - mag)
+        , r <| String.fromFloat <| 0.9 * (6 - mag)
         , fill "white"
         ]
         []
@@ -533,12 +604,12 @@ viewCircles =
                 (Animation.render style
                     ++ [ cx <| scaleUp x
                        , cy <| scaleUp y
-                       , r <| toString <| 0.92 * (6 - mag)
+                       , r <| String.fromFloat <| 0.92 * (6 - mag)
                        ]
                 )
                 []
     in
-        Array.toList << Array.map viewCircle
+    Array.toList << Array.map viewCircle
 
 
 viewSegments : Segments -> List (Svg msg)
@@ -550,7 +621,7 @@ viewSegments =
                 (stroke "yellow" :: strokeWidth "1.5" :: Animation.render style)
                 []
     in
-        List.map viewSegment
+    List.map viewSegment
 
 
 
@@ -577,7 +648,7 @@ initAnim pos name =
                     )
                     posIn
 
-        gather c ( x0, circ, seg ) =
+        gather c ( x0, cir, sg ) =
             let
                 { points, lines } =
                     Maybe.withDefault (Letter [] []) (Dict.get c alphabet)
@@ -588,11 +659,11 @@ initAnim pos name =
                 newSeg =
                     let
                         n =
-                            List.length circ
+                            List.length cir
                     in
-                        List.map (\( i, j ) -> ( i + n, j + n )) lines
+                    List.map (\( i, j ) -> ( i + n, j + n )) lines
             in
-                ( x0 + 5 * l, circ ++ newCirc, seg ++ newSeg )
+            ( x0 + 5 * l, cir ++ newCirc, sg ++ newSeg )
 
         ( _, circ, seg ) =
             List.foldl gather
@@ -604,12 +675,12 @@ initAnim pos name =
                 style =
                     Animation.style
                         [ Animation.strokeWidth 0
-                        , Animation.fill Color.white
-                        , Animation.stroke Color.white
+                        , Animation.fill (Animation.Color 255 255 255 255)
+                        , Animation.stroke (Animation.Color 255 255 255 255)
                         ]
             in
-                Array.fromList <|
-                    List.map (\( x, y, m ) -> Circle style x y m) circ
+            Array.fromList <|
+                List.map (\( x, y, m ) -> Circle style x y m) circ
 
         mkSegments circles =
             let
@@ -619,9 +690,9 @@ initAnim pos name =
                             [ Animation.moveTo 0 0, Animation.lineTo 0 0 ]
                         ]
             in
-                List.map (\( i, j ) -> Segment style i j) seg
+            List.map (\( i, j ) -> Segment style i j) seg
     in
-        ( mkCircles, mkSegments mkCircles )
+    ( mkCircles, mkSegments mkCircles )
 
 
 getCoord : Int -> Circles -> ( Float, Float )
@@ -630,9 +701,9 @@ getCoord n pts =
         get f =
             Maybe.withDefault 1000 <| Maybe.map f <| Array.get n pts
     in
-        ( get (\{ x } -> size * (1 + x) / 2)
-        , get (\{ y } -> size * (1 + y) / 2)
-        )
+    ( get (\{ x } -> size * (1 + x) / 2)
+    , get (\{ y } -> size * (1 + y) / 2)
+    )
 
 
 animateCircles : Circles -> Circles
@@ -642,18 +713,18 @@ animateCircles =
             { circ
                 | style =
                     Animation.queue
-                        [ Animation.wait <| 1000 + 100 * circ.x
+                        [ Animation.wait <| Time.millisToPosix <| floor <| 1000 + 100 * circ.x
                         , Animation.to
                             [ Animation.strokeWidth 10
-                            , Animation.fill Color.yellow
-                            , Animation.stroke Color.yellow
+                            , Animation.fill (Animation.Color 255 255 0 255)
+                            , Animation.stroke (Animation.Color 255 255 0 255)
                             ]
                         , Animation.to [ Animation.strokeWidth 0 ]
                         ]
                         circ.style
             }
     in
-        Array.map animateCircle
+    Array.map animateCircle
 
 
 animateSegments : Circles -> Segments -> Segments
@@ -669,22 +740,22 @@ animateSegments pts =
                         ( xt, yt ) =
                             getCoord seg.to points
                     in
-                        Animation.interrupt
-                            [ Animation.wait <| 2000 + 5 * xf
-                            , Animation.set
-                                [ Animation.path
-                                    [ Animation.moveTo xf yf
-                                    , Animation.lineTo xf yf
-                                    ]
-                                ]
-                            , Animation.to
-                                [ Animation.path
-                                    [ Animation.moveTo xf yf
-                                    , Animation.lineTo xt yt
-                                    ]
+                    Animation.interrupt
+                        [ Animation.wait <| Time.millisToPosix <| floor <| 2000 + 5 * xf
+                        , Animation.set
+                            [ Animation.path
+                                [ Animation.moveTo xf yf
+                                , Animation.lineTo xf yf
                                 ]
                             ]
-                            seg.style
+                        , Animation.to
+                            [ Animation.path
+                                [ Animation.moveTo xf yf
+                                , Animation.lineTo xt yt
+                                ]
+                            ]
+                        ]
+                        seg.style
             }
     in
-        List.map (animateSegment pts)
+    List.map (animateSegment pts)

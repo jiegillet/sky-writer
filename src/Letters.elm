@@ -2,7 +2,7 @@ module Letters exposing (Letter, alphabet)
 
 import Dict exposing (Dict)
 import List.Extra exposing (getAt)
-import Svg exposing (Svg, svg, circle, line)
+import Svg exposing (Svg, circle, line, svg)
 import Svg.Attributes exposing (..)
 
 
@@ -37,18 +37,18 @@ viewLetter n c =
                 ( xb, yb ) =
                     Maybe.withDefault ( 0, 0 ) <| getAt j points
             in
-                line
-                    [ x1 <| toString <| 20 + 20 * xa + (toFloat <| 80 * (n % 5))
-                    , y1 <| toString <| 20 + 20 * ya + (toFloat <| 120 * (n // 5))
-                    , x2 <| toString <| 20 + 20 * xb + (toFloat <| 80 * (n % 5))
-                    , y2 <| toString <| 20 + 20 * yb + (toFloat <| 120 * (n // 5))
-                    ]
-                    []
+            line
+                [ x1 <| String.fromFloat <| 20 + 20 * xa + (toFloat <| 80 * modBy 5 n)
+                , y1 <| String.fromFloat <| 20 + 20 * ya + (toFloat <| 120 * (n // 5))
+                , x2 <| String.fromFloat <| 20 + 20 * xb + (toFloat <| 80 * modBy 5 n)
+                , y2 <| String.fromFloat <| 20 + 20 * yb + (toFloat <| 120 * (n // 5))
+                ]
+                []
     in
-        svg [] <|
-            drawLetter <|
-                Maybe.withDefault (Letter [] []) <|
-                    Dict.get c alphabet
+    svg [] <|
+        drawLetter <|
+            Maybe.withDefault (Letter [] []) <|
+                Dict.get c alphabet
 
 
 alphabet : Alphabet
