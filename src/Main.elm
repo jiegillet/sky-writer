@@ -3,7 +3,6 @@ module Main exposing (..)
 import Animation
 import Array exposing (Array)
 import Browser
-import Browser.Dom as Dom exposing (Viewport)
 import Dict
 import Html exposing (..)
 import Html.Attributes exposing (align, disabled, placeholder, style)
@@ -15,9 +14,8 @@ import Letters exposing (Letter, alphabet)
 import List.Extra exposing (minimumBy)
 import Maybe
 import Result
-import Svg exposing (Svg, circle, line, rect, svg)
+import Svg exposing (Svg, circle, line, svg)
 import Svg.Attributes exposing (..)
-import Task
 import Time exposing (Month(..), Posix, Weekday(..))
 import Time.Extra as T
 
@@ -47,7 +45,6 @@ type alias Model =
     , segments : Segments
     , screen : Screen
     , error : String
-    , size : Size
     }
 
 
@@ -79,10 +76,6 @@ type alias Segment =
     { style : Animation.State, from : Int, to : Int }
 
 
-type alias Size =
-    { width : Float, height : Float }
-
-
 type Screen
     = Info
     | StarMap
@@ -104,9 +97,8 @@ init _ =
       , segments = []
       , screen = Info
       , error = ""
-      , size = Size 640 480
       }
-    , Cmd.batch [ Task.perform GetSize Dom.getViewport, getStarData ]
+    , Cmd.batch [ getStarData ]
     )
 
 
@@ -132,7 +124,6 @@ subscriptions { circles, segments } =
 
 type Msg
     = Render
-    | GetSize Viewport
     | ReadLoc String
     | ReadName String
     | ReadDate String
@@ -144,9 +135,6 @@ type Msg
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        GetSize { viewport } ->
-            ( { model | size = Size viewport.width viewport.height }, Cmd.none )
-
         ReadLoc address ->
             ( { model | address = address }, Cmd.none )
 
@@ -405,9 +393,9 @@ view : Model -> Browser.Document Msg
 view model =
     Browser.Document "Sky Writer"
         [ div
-            [ Html.Attributes.style "height" <| String.fromFloat (model.size.height + 2) ++ "px"
-            , Html.Attributes.style "width" <| String.fromFloat (model.size.width + 1) ++ "px"
+            [ Html.Attributes.style "min-height" "100vh"
             , Html.Attributes.style "backgroundColor" "black"
+            , Html.Attributes.style "padding" "30px"
             , Html.Attributes.style "color" "white"
             , align "center"
             ]
@@ -427,30 +415,28 @@ view model =
                             [ onClick Render, disabled (List.isEmpty model.stars) ]
                             [ text "Continue" ]
                         ]
+                    , Html.p [] [ text "This data will not be shared or stored anywhere." ]
                     ]
 
                 StarMap ->
-                    let
-                        s =
-                            Basics.min model.size.height model.size.width * 7 / 10
-                    in
                     [ svg
-                        [ width (String.fromFloat s)
-                        , height (String.fromFloat s)
+                        [ width <| "min(70vw, " ++ String.fromFloat size ++ "px)"
+                        , height <| "min(70vw, " ++ String.fromFloat size ++ "px)"
                         , viewBox <| "0 0 " ++ String.fromFloat size ++ " " ++ String.fromFloat size
                         , stroke "white"
                         , fill "none"
                         , strokeWidth "0.5"
-                        , Svg.Attributes.mask "url(#hole)"
                         ]
-                        (circleMask
-                            :: bigCircle
-                            :: drawParallels model.location
-                            ++ drawMeridians model.location
-                            ++ List.map drawStar model.stars2D
-                            ++ viewCircles model.circles
-                            ++ viewSegments model.segments
-                        )
+                        [ circleClip
+                        , Svg.g [ Svg.Attributes.clipPath "url(#hole)" ]
+                            (bigCircle
+                                :: drawParallels model.location
+                                ++ drawMeridians model.location
+                                ++ (model.stars2D |> List.filter starInView |> List.map drawStar)
+                                ++ viewCircles model.circles
+                                ++ viewSegments model.segments
+                            )
+                        ]
                     , h3 []
                         [ String.concat
                             [ Time.toWeekday Time.utc model.day |> fromWeekday
@@ -469,7 +455,6 @@ view model =
                             "You were born under these stars, "
                                 ++ model.name
                         ]
-                    , h3 [] [ text "Happy White Day" ]
                     ]
         ]
 
@@ -478,20 +463,11 @@ view model =
 -- Drawing the star map
 
 
-circleMask : Svg.Svg msg
-circleMask =
+circleClip : Svg.Svg msg
+circleClip =
     Svg.defs []
-        [ Svg.mask [ id "hole" ]
-            [ rect
-                [ x "-5"
-                , y "-5"
-                , width <| String.fromFloat (size + 10) ++ "px"
-                , height <| String.fromFloat (size + 10) ++ "px"
-                , fill "black"
-                ]
-                []
-            , circle [ r halfSize, cx halfSize, cy halfSize, fill "white" ] []
-            ]
+        [ Svg.clipPath [ id "hole" ]
+            [ circle [ r halfSize, cx halfSize, cy halfSize ] [] ]
         ]
 
 
@@ -583,6 +559,11 @@ scaleUp x =
     String.fromFloat (size * (1 + x) / 2)
 
 
+starInView : Position -> Bool
+starInView ( x, y, _ ) =
+    x ^ 2 + y ^ 2 <= 1
+
+
 drawStar : Position -> Svg.Svg msg
 drawStar ( x, y, mag ) =
     circle
@@ -635,16 +616,14 @@ initAnim pos name =
         l =
             0.9 * sin theta / 2
 
-        posIn =
-            List.filter (\( x, y, _ ) -> x ^ 2 + y ^ 2 <= 1) pos
-
         closestPoint x0 ( xp, yp ) =
-            Maybe.withDefault ( 1000, 1000, 0 ) <|
-                minimumBy
+            pos
+                |> List.filter starInView
+                |> minimumBy
                     (\( x, y, _ ) ->
                         (x - x0 - xp * l) ^ 2 + (y - yp * l + sin theta / 2) ^ 2
                     )
-                    posIn
+                |> Maybe.withDefault ( size, size, 0 )
 
         gather c ( x0, cir, sg ) =
             let
