@@ -15,13 +15,14 @@ import Letters exposing (Letter, alphabet)
 import List.Extra exposing (minimumBy)
 import Maybe
 import Result
-import Svg exposing (Svg, circle, line, mask, rect, svg)
+import Svg exposing (Svg, circle, line, rect, svg)
 import Svg.Attributes exposing (..)
 import Task
 import Time exposing (Month(..), Posix, Weekday(..))
 import Time.Extra as T
 
 
+main : Program () Model Msg
 main =
     Browser.document
         { init = init
@@ -161,7 +162,7 @@ update msg model =
         NewStars (Ok stars) ->
             ( { model | stars = stars }, Cmd.none )
 
-        NewStars (Err err) ->
+        NewStars (Err _) ->
             ( model, Cmd.none )
 
         NewLocation result ->
@@ -225,13 +226,10 @@ format =
 getStarData : Cmd Msg
 getStarData =
     let
-        forCORS =
-            "https://cors-anywhere.herokuapp.com/"
-
         url =
             "https://www.astropical.space/api.php?table=stars&which=magnitude&limit=4.9&format=json"
     in
-    Http.get { url = forCORS ++ url, expect = Http.expectJson NewStars decodeStars }
+    Http.get { url = url, expect = Http.expectJson NewStars decodeStars }
 
 
 decodeStars : Decode.Decoder (List Star)
@@ -254,7 +252,7 @@ getLocation : String -> Cmd Msg
 getLocation loc =
     let
         url =
-            "https://maps.googleapis.com/maps/api/geocode/json?key=AIzaSyD9vT3RWO8YwTXLg2rH8xZMLouB6XHGI4U&address="
+            "https://geocode.googleapis.com/v4/geocode/address?key=AIzaSyDxRQR2gi1h9dp4bR9QM_or6hNSq2EXzns&address.addressLines="
     in
     Http.get { url = url ++ loc, expect = Http.expectJson NewLocation decodeLocation }
 
@@ -372,7 +370,7 @@ fromMonth month =
 
 
 getPosition : Location -> Posix -> Star -> Position
-getPosition ({ lat, lng } as loc) day { mag, ra, de } =
+getPosition ({ lat } as loc) day { mag, ra, de } =
     let
         d =
             degrees de
@@ -682,7 +680,7 @@ initAnim pos name =
             Array.fromList <|
                 List.map (\( x, y, m ) -> Circle style x y m) circ
 
-        mkSegments circles =
+        mkSegments =
             let
                 style =
                     Animation.style
@@ -692,7 +690,7 @@ initAnim pos name =
             in
             List.map (\( i, j ) -> Segment style i j) seg
     in
-    ( mkCircles, mkSegments mkCircles )
+    ( mkCircles, mkSegments )
 
 
 getCoord : Int -> Circles -> ( Float, Float )

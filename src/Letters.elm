@@ -1,8 +1,9 @@
 module Letters exposing (Letter, alphabet)
 
 import Dict exposing (Dict)
+import Html exposing (Html)
 import List.Extra exposing (getAt)
-import Svg exposing (Svg, circle, line, svg)
+import Svg exposing (Svg, line, svg)
 import Svg.Attributes exposing (..)
 
 
@@ -18,6 +19,7 @@ type alias Alphabet =
     Dict Char Letter
 
 
+main : Html msg
 main =
     svg [ viewBox "0 0 1000 1000", stroke "black" ]
         (List.indexedMap viewLetter <| String.toList "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
