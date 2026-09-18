@@ -252,7 +252,7 @@ getLocation : String -> Cmd Msg
 getLocation loc =
     let
         url =
-            "https://geocode.googleapis.com/v4/geocode/address?key=AIzaSyDxRQR2gi1h9dp4bR9QM_or6hNSq2EXzns&address.addressLines="
+            "https://geocode.googleapis.com/v4/geocode/address?languageCode=en&key=AIzaSyDxRQR2gi1h9dp4bR9QM_or6hNSq2EXzns&address.addressLines="
     in
     Http.get { url = url ++ loc, expect = Http.expectJson NewLocation decodeLocation }
 
@@ -264,9 +264,9 @@ decodeLocation =
             Decode.field "results" << Decode.index 0
     in
     Decode.map3 Location
-        (res <| Decode.field "formatted_address" Decode.string)
-        (res <| Decode.at [ "geometry", "location", "lat" ] Decode.float)
-        (res <| Decode.at [ "geometry", "location", "lng" ] Decode.float)
+        (res <| Decode.field "formattedAddress" Decode.string)
+        (res <| Decode.at [ "location", "latitude" ] Decode.float)
+        (res <| Decode.at [ "location", "longitude" ] Decode.float)
 
 
 
